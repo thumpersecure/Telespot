@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TeleSpot - Multi-Engine Phone Number Search
-Searches for phone numbers across Google, Bing, and DuckDuckGo
+Searches for phone numbers using Google Custom Search API and Bing Search API
 Focuses on name and location pattern analysis
 """
 
@@ -9,9 +9,8 @@ import requests
 import time
 import re
 import sys
+import os
 from collections import Counter
-from bs4 import BeautifulSoup
-from urllib.parse import quote_plus
 
 ASCII_LOGO = """
 ████████╗███████╗██╗     ███████╗███████╗██████╗  ██████╗ ████████╗
@@ -20,7 +19,7 @@ ASCII_LOGO = """
    ██║   ██╔══╝  ██║     ██╔══╝  ╚════██║██╔═══╝ ██║   ██║   ██║   
    ██║   ███████╗███████╗███████╗███████║██║     ╚██████╔╝   ██║   
    ╚═╝   ╚══════╝╚══════╝╚══════╝╚══════╝╚═╝      ╚═════╝    ╚═╝   
-                                                         version 2.0
+                                                         version 3.0
 """
 
 # ANSI color codes for terminal output
@@ -54,6 +53,27 @@ US_STATES = {
 }
 
 
+def load_api_keys():
+    """Load API keys from environment variables or config file"""
+    config = {
+        'google_api_key': os.environ.get('GOOGLE_API_KEY'),
+        'google_cse_id': os.environ.get('GOOGLE_CSE_ID'),
+        'bing_api_key': os.environ.get('BING_API_KEY')
+    }
+    
+    # Try to load from config file if env vars not set
+    if not all([config['google_api_key'], config['bing_api_key']]):
+        config_file = os.path.join(os.path.dirname(__file__) or '.', '.telespot_config')
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                for line in f:
+                    if '=' in line and not line.startswith('#'):
+                        key, value = line.strip().split('=', 1)
+                        config[key.lower()] = value.strip()
+    
+    return config
+
+
 def generate_phone_formats(phone_number):
     """Generate various phone number formats for searching"""
     digits = re.sub(r'\D', '', phone_number)
@@ -82,117 +102,119 @@ def generate_phone_formats(phone_number):
     return formats
 
 
-def search_google(query, num_results=10):
-    """Search Google and extract results"""
-    results = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
+def search_google_api(query, api_key, cse_id, num_results=10):
+    """Search using Google Custom Search API"""
+    if not api_key or not cse_id:
+        return []
     
+    results = []
     try:
-        url = f'https://www.google.com/search?q={quote_plus(query)}&num={num_results}'
-        response = requests.get(url, headers=headers, timeout=10)
+        url = 'https://www.googleapis.com/customsearch/v1'
+        params = {
+            'key': api_key,
+            'cx': cse_id,
+            'q': query,
+            'num': min(num_results, 10)  # API max is 10 per request
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
         
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Find search result divs
-            for g in soup.find_all('div', class_='g'):
-                # Extract title
-                title_elem = g.find('h3')
-                title = title_elem.get_text() if title_elem else ''
-                
-                # Extract snippet
-                snippet_elem = g.find('div', class_=['VwiC3b', 'yXK7lf'])
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-                
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'source': 'Google'
-                    })
+            data = response.json()
+            for item in data.get('items', []):
+                results.append({
+                    'title': item.get('title', ''),
+                    'snippet': item.get('snippet', ''),
+                    'source': 'Google'
+                })
+        elif response.status_code == 429:
+            print(f"  {Colors.RED}✗ Google API quota exceeded{Colors.END}")
+        else:
+            print(f"  {Colors.YELLOW}⚠ Google API error: {response.status_code}{Colors.END}")
         
         return results
     except Exception as e:
-        print(f"  {Colors.YELLOW}Google search error: {str(e)[:50]}{Colors.END}")
+        print(f"  {Colors.YELLOW}Google API error: {str(e)[:50]}{Colors.END}")
         return []
 
 
-def search_bing(query, num_results=10):
-    """Search Bing and extract results"""
-    results = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
+def search_bing_api(query, api_key, num_results=10):
+    """Search using Bing Search API"""
+    if not api_key:
+        return []
     
+    results = []
     try:
-        url = f'https://www.bing.com/search?q={quote_plus(query)}&count={num_results}'
-        response = requests.get(url, headers=headers, timeout=10)
+        url = 'https://api.bing.microsoft.com/v7.0/search'
+        headers = {'Ocp-Apim-Subscription-Key': api_key}
+        params = {
+            'q': query,
+            'count': num_results,
+            'textDecorations': False,
+            'textFormat': 'Raw'
+        }
+        
+        response = requests.get(url, headers=headers, params=params, timeout=10)
         
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Find search result items
-            for item in soup.find_all('li', class_='b_algo'):
-                # Extract title
-                title_elem = item.find('h2')
-                title = title_elem.get_text() if title_elem else ''
-                
-                # Extract snippet
-                snippet_elem = item.find('p')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-                
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'source': 'Bing'
-                    })
+            data = response.json()
+            for item in data.get('webPages', {}).get('value', []):
+                results.append({
+                    'title': item.get('name', ''),
+                    'snippet': item.get('snippet', ''),
+                    'source': 'Bing'
+                })
+        elif response.status_code == 429:
+            print(f"  {Colors.RED}✗ Bing API quota exceeded{Colors.END}")
+        else:
+            print(f"  {Colors.YELLOW}⚠ Bing API error: {response.status_code}{Colors.END}")
         
         return results
     except Exception as e:
-        print(f"  {Colors.YELLOW}Bing search error: {str(e)[:50]}{Colors.END}")
+        print(f"  {Colors.YELLOW}Bing API error: {str(e)[:50]}{Colors.END}")
         return []
 
 
-def search_duckduckgo(query, num_results=10):
-    """Search DuckDuckGo and extract results"""
+def search_fallback(query):
+    """
+    Fallback search method that doesn't require API keys
+    Uses DuckDuckGo Instant Answer API (limited but free)
+    """
     results = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-    
     try:
-        url = f'https://html.duckduckgo.com/html/?q={quote_plus(query)}'
-        response = requests.get(url, headers=headers, timeout=10)
+        url = 'https://api.duckduckgo.com/'
+        params = {
+            'q': query,
+            'format': 'json',
+            'no_html': 1,
+            'skip_disambig': 1
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
         
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
+            data = response.json()
             
-            # Find search results
-            for result in soup.find_all('div', class_='result'):
-                # Extract title
-                title_elem = result.find('a', class_='result__a')
-                title = title_elem.get_text() if title_elem else ''
-                
-                # Extract snippet
-                snippet_elem = result.find('a', class_='result__snippet')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-                
-                if title or snippet:
+            # Abstract (main answer)
+            if data.get('Abstract'):
+                results.append({
+                    'title': data.get('Heading', 'DuckDuckGo Result'),
+                    'snippet': data.get('Abstract', ''),
+                    'source': 'DuckDuckGo'
+                })
+            
+            # Related topics
+            for topic in data.get('RelatedTopics', [])[:5]:
+                if isinstance(topic, dict) and topic.get('Text'):
                     results.append({
-                        'title': title,
-                        'snippet': snippet,
+                        'title': topic.get('FirstURL', '').split('/')[-1].replace('_', ' '),
+                        'snippet': topic.get('Text', ''),
                         'source': 'DuckDuckGo'
                     })
-                
-                if len(results) >= num_results:
-                    break
         
         return results
     except Exception as e:
-        print(f"  {Colors.YELLOW}DuckDuckGo search error: {str(e)[:50]}{Colors.END}")
+        print(f"  {Colors.YELLOW}DuckDuckGo error: {str(e)[:50]}{Colors.END}")
         return []
 
 
@@ -210,7 +232,8 @@ def extract_names(text):
         'United States', 'New York', 'Los Angeles', 'San Francisco',
         'Google', 'Bing', 'Yahoo', 'Facebook', 'Twitter', 'Instagram',
         'Best', 'Top', 'Free', 'Online', 'Reviews', 'About', 'Home',
-        'Business', 'Service', 'Services', 'Company', 'Companies'
+        'Business', 'Service', 'Services', 'Company', 'Companies',
+        'White Pages', 'Yellow Pages', 'True Caller'
     }
     
     filtered_names = []
@@ -332,11 +355,76 @@ def print_pattern_summary(patterns):
     print(f"\n{Colors.BOLD}{Colors.HEADER}{'='*80}{Colors.END}\n")
 
 
+def setup_wizard():
+    """Interactive setup wizard for API keys"""
+    print(f"{Colors.BOLD}{Colors.CYAN}TeleSpot API Setup Wizard{Colors.END}\n")
+    print("TeleSpot can use search engine APIs for reliable, unblocked searches.")
+    print("You can configure one or both APIs:\n")
+    
+    print(f"{Colors.YELLOW}1. Google Custom Search API{Colors.END} (Free: 100 searches/day)")
+    print("   Get keys at: https://developers.google.com/custom-search/v1/overview")
+    print(f"{Colors.YELLOW}2. Bing Search API{Colors.END} (Free tier: 1000 searches/month)")
+    print("   Get key at: https://www.microsoft.com/en-us/bing/apis/bing-web-search-api")
+    print(f"{Colors.YELLOW}3. Skip (use limited DuckDuckGo fallback){Colors.END}\n")
+    
+    config_lines = []
+    
+    choice = input("Configure APIs? (y/n): ").strip().lower()
+    if choice == 'y':
+        print("\n" + "="*60)
+        print("Google Custom Search Setup:")
+        print("="*60)
+        google_key = input("Google API Key (or press Enter to skip): ").strip()
+        google_cse = input("Google CSE ID (or press Enter to skip): ").strip()
+        
+        if google_key:
+            config_lines.append(f"google_api_key={google_key}")
+        if google_cse:
+            config_lines.append(f"google_cse_id={google_cse}")
+        
+        print("\n" + "="*60)
+        print("Bing Search API Setup:")
+        print("="*60)
+        bing_key = input("Bing API Key (or press Enter to skip): ").strip()
+        
+        if bing_key:
+            config_lines.append(f"bing_api_key={bing_key}")
+        
+        if config_lines:
+            config_file = os.path.join(os.path.dirname(__file__) or '.', '.telespot_config')
+            with open(config_file, 'w') as f:
+                f.write("# TeleSpot API Configuration\n")
+                f.write("# Keep this file secure - do not share your API keys\n\n")
+                f.write('\n'.join(config_lines))
+            
+            print(f"\n{Colors.GREEN}✓ Configuration saved to .telespot_config{Colors.END}")
+            print(f"{Colors.YELLOW}Note: Add .telespot_config to your .gitignore!{Colors.END}\n")
+    else:
+        print(f"\n{Colors.YELLOW}Skipping API setup. Will use limited DuckDuckGo fallback.{Colors.END}\n")
+
+
 def main():
     """Main execution function"""
     print(f"{Colors.BOLD}{Colors.CYAN}")
     print(ASCII_LOGO)
     print(f"{Colors.END}")
+    
+    # Check for setup flag
+    if '--setup' in sys.argv:
+        setup_wizard()
+        return
+    
+    # Load API configuration
+    config = load_api_keys()
+    
+    # Check if any APIs are configured
+    has_google = config.get('google_api_key') and config.get('google_cse_id')
+    has_bing = config.get('bing_api_key')
+    has_apis = has_google or has_bing
+    
+    if not has_apis:
+        print(f"{Colors.YELLOW}⚠ No API keys configured. Using limited DuckDuckGo fallback.{Colors.END}")
+        print(f"{Colors.CYAN}Run './telespot.py --setup' to configure APIs for better results.{Colors.END}\n")
     
     # Check for debug flag
     debug_mode = '--debug' in sys.argv or '-d' in sys.argv
@@ -345,7 +433,7 @@ def main():
         print(f"{Colors.YELLOW}🐛 Debug mode enabled{Colors.END}\n")
     
     # Get phone number from user
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and not sys.argv[1].startswith('--'):
         phone_number = sys.argv[1]
     else:
         phone_number = input(f"{Colors.CYAN}Enter phone number (digits only or formatted): {Colors.END}")
@@ -360,33 +448,35 @@ def main():
     
     all_results = {}
     
-    # Search each format across multiple engines
+    # Search each format across available engines
     for i, fmt in enumerate(formats, 1):
         print(f"{Colors.BLUE}[{i}/{len(formats)}] Searching: {Colors.END}{fmt}")
         
         format_results = []
         
-        # Search Google
-        print(f"  {Colors.CYAN}→ Searching Google...{Colors.END}", end=' ')
-        google_results = search_google(fmt, num_results=5)
-        format_results.extend(google_results)
-        print(f"{Colors.GREEN}({len(google_results)} results){Colors.END}")
+        # Search Google API
+        if has_google:
+            print(f"  {Colors.CYAN}→ Searching Google...{Colors.END}", end=' ')
+            google_results = search_google_api(fmt, config['google_api_key'], config['google_cse_id'], num_results=10)
+            format_results.extend(google_results)
+            print(f"{Colors.GREEN}({len(google_results)} results){Colors.END}")
+            time.sleep(0.5)
         
-        time.sleep(1)  # Rate limiting
+        # Search Bing API
+        if has_bing:
+            print(f"  {Colors.CYAN}→ Searching Bing...{Colors.END}", end=' ')
+            bing_results = search_bing_api(fmt, config['bing_api_key'], num_results=10)
+            format_results.extend(bing_results)
+            print(f"{Colors.GREEN}({len(bing_results)} results){Colors.END}")
+            time.sleep(0.5)
         
-        # Search Bing
-        print(f"  {Colors.CYAN}→ Searching Bing...{Colors.END}", end=' ')
-        bing_results = search_bing(fmt, num_results=5)
-        format_results.extend(bing_results)
-        print(f"{Colors.GREEN}({len(bing_results)} results){Colors.END}")
-        
-        time.sleep(1)  # Rate limiting
-        
-        # Search DuckDuckGo
-        print(f"  {Colors.CYAN}→ Searching DuckDuckGo...{Colors.END}", end=' ')
-        ddg_results = search_duckduckgo(fmt, num_results=5)
-        format_results.extend(ddg_results)
-        print(f"{Colors.GREEN}({len(ddg_results)} results){Colors.END}")
+        # Fallback to DuckDuckGo if no APIs configured
+        if not has_apis:
+            print(f"  {Colors.CYAN}→ Searching DuckDuckGo...{Colors.END}", end=' ')
+            ddg_results = search_fallback(fmt)
+            format_results.extend(ddg_results)
+            print(f"{Colors.GREEN}({len(ddg_results)} results){Colors.END}")
+            time.sleep(1)
         
         all_results[fmt] = format_results
         
@@ -397,8 +487,8 @@ def main():
         
         # Rate limiting between formats
         if i < len(formats):
-            print(f"  {Colors.YELLOW}⏳ Waiting 3 seconds...{Colors.END}\n")
-            time.sleep(3)
+            print(f"  {Colors.YELLOW}⏳ Waiting 2 seconds...{Colors.END}\n")
+            time.sleep(2)
         else:
             print()
     

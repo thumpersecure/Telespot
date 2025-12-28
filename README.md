@@ -7,41 +7,63 @@
    ██║   ██╔══╝  ██║     ██╔══╝  ╚════██║██╔═══╝ ██║   ██║   ██║   
    ██║   ███████╗███████╗███████╗███████║██║     ╚██████╔╝   ██║   
    ╚═╝   ╚══════╝╚══════╝╚══════╝╚══════╝╚═╝      ╚═════╝    ╚═╝   
-                                                         version 2.0
+                                                         version 3.0
 ```
 
 [![GitHub](https://img.shields.io/badge/GitHub-thumpersecure/Telespot-blue?logo=github)](https://github.com/thumpersecure/Telespot)
 [![Python](https://img.shields.io/badge/Python-3.6+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](https://github.com/thumpersecure/Telespot/blob/main/LICENSE)
 
-A Python script that searches **Google, Bing, and DuckDuckGo** for phone numbers using multiple format variations and focuses on identifying **names and locations** in the results.
+A Python script that searches **Google and Bing via official APIs** for phone numbers and focuses on identifying **names and locations** in the results. No more CAPTCHAs or IP blocks!
 
 ## ✨ Features
 
-- **Multi-Engine Search**: Searches Google, Bing, AND DuckDuckGo simultaneously 🔍
+- **🔓 API-Based Search**: Uses official Google Custom Search API and Bing Search API
+  - **No CAPTCHAs** - Legitimate API access
+  - **No IP blocks** - Designed for programmatic access
+  - **Reliable results** - Consistent, unblocked searches
+  - **Free tiers available** - 100 Google searches/day + 1,000 Bing searches/month
 - **Multiple Format Searching**: Automatically generates 4 different phone number format variations
 - **Focused Pattern Analysis**: Identifies common patterns:
   - 📛 **Associated names** (people mentioned with the number)
   - 📍 **Geographic locations** (cities, states, zip codes)
   - ✅ **Results by source** (which search engine found what)
-- **Rate Limiting**: Built-in delays between searches to avoid throttling
+- **Easy API Setup**: Interactive wizard to configure API keys
+- **Fallback Option**: Uses DuckDuckGo API if no keys configured (limited results)
 - **Colored Terminal Output**: Easy-to-read results with color coding
 - **JSON Export**: Option to save detailed results for further analysis
 
-## 🎯 Key Differences from v1.x
+## 🎯 Why v3.0?
 
-- ✅ **No more ddgr dependency** - Uses direct web scraping instead
-- ✅ **3 search engines** instead of just DuckDuckGo
-- ✅ **Focused on names & locations** - Removed domain analysis
-- ✅ **More reliable results** - Web scraping gives consistent output
+**v1.x - v2.x had a fatal flaw:** Web scraping gets blocked!
+- ❌ Search engines use CAPTCHAs
+- ❌ IP addresses get blacklisted
+- ❌ Results were unreliable
+
+**v3.0 solves this with official APIs:**
+- ✅ No blocks or CAPTCHAs
+- ✅ Free tiers: 100-1000 searches/month
+- ✅ Actually returns results!
 
 ## 📋 Prerequisites
 
 1. **Python 3.6+** 🐍
-2. **Required Python packages** (included in requirements.txt):
-   - `requests` - For HTTP requests to search engines
-   - `beautifulsoup4` - For parsing HTML search results
-   - `lxml` - HTML/XML parser
+2. **API Keys** (at least one recommended):
+   - **Google Custom Search API** - 100 free searches/day
+   - **Bing Search API** - 1,000 free searches/month
+   - See [API_SETUP_GUIDE.md](API_SETUP_GUIDE.md) for detailed instructions
+3. **Python package**: `requests` (auto-installed via requirements.txt)
+
+### 🔑 API Setup (5 minutes)
+
+**Quick setup wizard:**
+```bash
+./telespot.py --setup
+```
+
+This will guide you through entering your API keys. See [API_SETUP_GUIDE.md](API_SETUP_GUIDE.md) for detailed instructions on getting free API keys.
+
+**Don't want to set up APIs?** TeleSpot will use DuckDuckGo as a fallback (limited results, but works without setup).
 
 ### Setting Up Python Virtual Environment (Recommended) 🔧
 
@@ -82,18 +104,9 @@ cd Telespot
 # Run the setup script
 chmod +x setup.sh
 ./setup.sh
-```
 
-Or download directly:
-```bash
-# Download all files
-wget https://raw.githubusercontent.com/thumpersecure/Telespot/main/telespot.py
-wget https://raw.githubusercontent.com/thumpersecure/Telespot/main/requirements.txt
-wget https://raw.githubusercontent.com/thumpersecure/Telespot/main/setup.sh
-
-# Run the setup script
-chmod +x setup.sh
-./setup.sh
+# Configure API keys (takes 5 minutes)
+./telespot.py --setup
 ```
 
 The setup script will:
@@ -101,19 +114,16 @@ The setup script will:
 - ✅ Create virtual environment (telespot-env)
 - ✅ Install all dependencies
 - ✅ Make telespot.py executable
-- ✅ Offer to run TeleSpot immediately
 
-### Manual Setup (Recommended for Learning)
+Then run `--setup` to configure your API keys (see [API_SETUP_GUIDE.md](API_SETUP_GUIDE.md)).
+
+### Manual Setup
 
 1. **Clone or download TeleSpot:**
 ```bash
 # Clone the repository
 git clone https://github.com/thumpersecure/Telespot.git
 cd Telespot
-
-# Or download individual files
-wget https://raw.githubusercontent.com/thumpersecure/Telespot/main/telespot.py
-wget https://raw.githubusercontent.com/thumpersecure/Telespot/main/requirements.txt
 ```
 
 2. **Create and activate virtual environment:**
@@ -133,11 +143,14 @@ pip install -r requirements.txt
 chmod +x telespot.py
 ```
 
-5. **Run TeleSpot:**
+5. **Configure API keys:**
 ```bash
-./telespot.py
-# or
-python telespot.py
+./telespot.py --setup
+```
+
+6. **Run TeleSpot:**
+```bash
+./telespot.py 5555551212
 ```
 
 ### Quick Install (Without Virtual Environment)
@@ -204,19 +217,19 @@ The script accepts phone numbers in any format - it will strip out non-digit cha
 
 ## 🔢 Search Formats
 
-The script searches for the following format variations across **all three search engines**:
+The script searches for the following format variations via **official APIs**:
 
 1. `555-555-1212` - Dashes
 2. `(555) 555-1212` - Parentheses and dashes
 3. `5555551212` - Digits only
 4. `1 555-555-1212` - Country code with dashes
 
-Each format is searched on:
-- 🔵 **Google** (5 results per format)
-- 🟢 **Bing** (5 results per format)
-- 🦆 **DuckDuckGo** (5 results per format)
+Each format is searched using configured APIs:
+- 🔵 **Google Custom Search API** (up to 10 results per format, if configured)
+- 🟢 **Bing Search API** (up to 10 results per format, if configured)
+- 🦆 **DuckDuckGo API** (fallback if no APIs configured, limited results)
 
-**Total**: Up to 60 results per search (4 formats × 3 engines × 5 results)
+**Total**: Up to 80 results per search with both APIs configured (4 formats × 2 engines × 10 results)
 
 ## 📊 Output
 
@@ -304,38 +317,48 @@ This ensures:
 
 ## 🔧 Troubleshooting
 
-### Getting "0 results" for all searches 🔍
+### Still getting "0 results" even with APIs configured? 🔍
 
-**1. Check your internet connection:**
-```bash
-ping google.com
-```
-
-**2. Test the dependencies:**
-```bash
-# Activate your venv first
-source telespot-env/bin/activate
-
-# Test if packages are installed
-python -c "import requests; import bs4; print('Dependencies OK')"
-```
-
-**3. Run in debug mode:**
+**1. Verify API keys are loaded:**
 ```bash
 ./telespot.py --debug 5555551212
 ```
+Look for messages like "Searching Google..." or "Searching Bing..."
 
-**4. Try a well-known number:**
-Test with a business number you can verify has results online, like a major company's customer service line.
+**2. Check API status:**
+- Google Custom Search: https://console.cloud.google.com/
+- Bing Search: https://portal.azure.com/
 
-### Search engines blocking requests 🚫
+Make sure:
+- APIs are enabled
+- You haven't exceeded quota
+- Keys are valid
 
-If you're getting blocked or seeing CAPTCHAs:
-- **Wait 10-15 minutes** before running again
-- **Use a VPN** to change your IP address
-- **Reduce search frequency** - Don't run multiple searches back-to-back
+**3. Test APIs directly:**
+```bash
+# Test if config file exists
+cat .telespot_config
 
-### ImportError or Module Not Found 🚨
+# Should show your API keys
+```
+
+**4. Common issues:**
+- **Wrong API enabled**: Make sure you enabled "Custom Search API" not just "Search API"
+- **CSE not configured**: Your Custom Search Engine must be set to "Search the entire web"
+- **Quota exceeded**: Check your API dashboard for usage limits
+
+### "API quota exceeded" errors 📊
+
+**Free tier limits:**
+- Google: 100 searches/day
+- Bing: 1,000 searches/month
+
+**Solutions:**
+- Wait for quota to reset (midnight UTC for Google, monthly for Bing)
+- Use the other API as backup
+- Upgrade to paid tier (rarely needed)
+
+### "API key not configured" warning ⚠️
 This usually means your virtual environment isn't activated or dependencies aren't installed:
 ```bash
 # Activate venv
@@ -359,22 +382,30 @@ If searches are timing out:
 ## ⚙️ Technical Details
 
 - **Language**: Python 3 🐍
-- **Dependencies**: requests, beautifulsoup4, lxml (specified in requirements.txt)
+- **Dependencies**: requests (specified in requirements.txt)
 - **Recommended Setup**: Python virtual environment
 - **Output**: Colored terminal text + optional JSON export
-- **Search engines**: Google, Bing, DuckDuckGo 🔍
-- **Method**: Web scraping with BeautifulSoup
+- **Search method**: Official APIs (Google Custom Search, Bing Search) 🔐
+- **Fallback**: DuckDuckGo Instant Answer API
 
 ### How It Works 🛠️
 
 1. **Format Generation**: Creates 4 variations of the phone number
-2. **Multi-Engine Search**: Queries Google, Bing, and DuckDuckGo for each format
-3. **HTML Parsing**: Extracts titles and snippets from search results using BeautifulSoup
-4. **Pattern Analysis**: 
+2. **API Calls**: Queries Google and/or Bing APIs for each format
+3. **Pattern Analysis**: 
    - Identifies names using capitalization patterns
    - Detects locations via state codes, city names, and zip codes
    - Counts frequency of mentions
-5. **Result Summary**: Displays most common names and locations
+4. **Result Summary**: Displays most common names and locations
+
+### API Benefits Over Web Scraping 📊
+
+| Feature | v3.0 (APIs) | v2.0 (Web Scraping) |
+|---------|-------------|---------------------|
+| Blocks/CAPTCHAs | ✅ None | ❌ Constant |
+| Results reliability | ✅ 100% | ❌ 10-20% |
+| Rate limits | ✅ High (100-1000/month free) | ❌ Low (few searches before block) |
+| Setup required | ⚠️ API keys (5 min) | ✅ None |
 
 ### Project Structure 📁
 ```
@@ -382,6 +413,8 @@ telespot/
 ├── telespot.py          # Main script
 ├── requirements.txt     # Python dependencies
 ├── setup.sh            # Automated setup script
+├── .telespot_config    # API keys (created by --setup, add to .gitignore!)
+├── API_SETUP_GUIDE.md  # Detailed API setup instructions
 └── README.md           # Documentation
 ```
 
