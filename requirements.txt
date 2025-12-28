@@ -1,0 +1,5 @@
+# TeleSpot Requirements
+# Phone number OSINT search tool
+
+# DuckDuckGo command-line search tool
+ddgr>=2.1
