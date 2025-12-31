@@ -7,43 +7,53 @@
    ██║   ██╔══╝  ██║     ██╔══╝  ╚════██║██╔═══╝ ██║   ██║   ██║   
    ██║   ███████╗███████╗███████╗███████║██║     ╚██████╔╝   ██║   
    ╚═╝   ╚══════╝╚══════╝╚══════╝╚══════╝╚═╝      ╚═════╝    ╚═╝   
-                                                         version 3.0
+                                                         version 4.5
 ```
 
 [![GitHub](https://img.shields.io/badge/GitHub-thumpersecure/Telespot-blue?logo=github)](https://github.com/thumpersecure/Telespot)
 [![Python](https://img.shields.io/badge/Python-3.6+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](https://github.com/thumpersecure/Telespot/blob/main/LICENSE)
 
-A Python script that searches **Google and Bing via official APIs** for phone numbers and focuses on identifying **names and locations** in the results. No more CAPTCHAs or IP blocks!
+A Python script that searches **Google, Bing, DuckDuckGo, and Dehashed** for phone numbers and focuses on identifying **names, locations, and usernames** in the results. Features API-based searching to avoid CAPTCHAs and IP blocks!
 
 ## ✨ Features
 
-- **🔓 API-Based Search**: Uses official Google Custom Search API and Bing Search API
-  - **No CAPTCHAs** - Legitimate API access
-  - **No IP blocks** - Designed for programmatic access
-  - **Reliable results** - Consistent, unblocked searches
-  - **Free tiers available** - 100 Google searches/day + 1,000 Bing searches/month
-- **Multiple Format Searching**: Automatically generates 4 different phone number format variations
-- **Focused Pattern Analysis**: Identifies common patterns:
+### 🔍 Search Capabilities
+- **🔓 API-Based Search**: Google Custom Search, Bing Search, DuckDuckGo
+- **🦆 DuckDuckGo Always Included**: Free backup search engine (no API needed)
+- **🔓 Dehashed Integration**: Search breach databases for phone numbers (optional paid service)
+- **🎯 Site-Specific Search**: Limit searches to specific people-finder sites:
+  - YellowPages.com, WhitePages.com, ThatsThem.com
+  - Information.com, InstantCheckmate.com
+  - Facebook.com, Yahoo.com
+- **📞 10 Search Formats**: Comprehensive format variations including quoted searches
+- **🔑 Keyword Enhancement**: Add custom keywords to searches (e.g., "John Smith")
+
+### 📊 Analysis Features
+- **Focused Pattern Analysis**:
   - 📛 **Associated names** (people mentioned with the number)
   - 📍 **Geographic locations** (cities, states, zip codes)
+  - 👤 **Username Correlations** - Find usernames appearing in 2+ results
   - ✅ **Results by source** (which search engine found what)
-- **Easy API Setup**: Interactive wizard to configure API keys
-- **Fallback Option**: Uses DuckDuckGo API if no keys configured (limited results)
+- **🎯 Confidence Score**: Percentage-based accuracy rating (0-100%)
+- **📋 Dossier Mode**: Specialized searches for persons or businesses
+- **💾 Smart File Saving**: Default TXT format with custom naming
+
+### 🎨 User Experience
+- **--verbose mode**: See complete listings with URLs, titles, and descriptions
+- **--colorful mode**: Enhanced visual experience with extra colors
+- **--dtmf mode**: Play DTMF tones while searching (fun audio feedback!)
+- **--usernames**: Focus on username correlation analysis
+- **--delay option**: Customize rate limiting (default: 2 seconds)
 - **Colored Terminal Output**: Easy-to-read results with color coding
-- **JSON Export**: Option to save detailed results for further analysis
 
-## 🎯 Why v3.0?
+## 🆕 What's New in v4.5
 
-**v1.x - v2.x had a fatal flaw:** Web scraping gets blocked!
-- ❌ Search engines use CAPTCHAs
-- ❌ IP addresses get blacklisted
-- ❌ Results were unreliable
-
-**v3.0 solves this with official APIs:**
-- ✅ No blocks or CAPTCHAs
-- ✅ Free tiers: 100-1000 searches/month
-- ✅ Actually returns results!
+✅ **Site-specific search** - Search only on people-finder sites  
+✅ **Dehashed integration** - Check breach databases  
+✅ **DTMF tone playback** - Audio feedback while searching  
+✅ **Username correlation** - Find linked social media profiles  
+✅ **Enhanced pattern matching** - Better name/location detection
 
 ## 📋 Prerequisites
 
@@ -182,54 +192,139 @@ chmod +x telespot.py
 
 ### Basic Usage
 
-Run the script and enter the phone number when prompted:
-
-```bash
-./telespot.py
-```
-
-### Command-Line Usage
-
-Pass the phone number as an argument:
-
 ```bash
 ./telespot.py 5555551212
-./telespot.py "(555) 555-1212"
-./telespot.py 1-555-555-1212
+# or
+python telespot.py "(555) 555-1212"
 ```
 
-### Debug Mode 🐛
-
-If you're getting no results, run in debug mode to see what's happening:
+### Advanced Options
 
 ```bash
-./telespot.py --debug 5555551212
-# or
-python telespot.py -d 5555551212
+# Verbose mode - see all URLs, titles, and descriptions
+./telespot.py --verbose 5555551212
+
+# Colorful mode - enhanced visual experience  
+./telespot.py --colorful 5555551212
+
+# Add keywords to search
+./telespot.py --keywords "John Smith" 5555551212
+
+# Site-specific search (people-finder sites)
+./telespot.py --site whitepages.com 5555551212
+./telespot.py --site facebook.com 5555551212
+
+# Search Dehashed breach database
+./telespot.py --dehashed 5555551212
+
+# Play DTMF tones while searching (fun mode!)
+./telespot.py --dtmf 5555551212
+
+# Focus on username correlations
+./telespot.py --usernames 5555551212
+
+# Combine multiple options
+./telespot.py --verbose --colorful --keywords "Acme Corp" --site yellowpages.com 5555551212
+
+# Custom delay between searches (in seconds)
+./telespot.py --delay 5 5555551212
+
+# Generate a person dossier
+./telespot.py --dossier person 5555551212
+
+# Generate a business dossier
+./telespot.py --dossier business 5555551212
+
+# The works - everything!
+./telespot.py --verbose --colorful --dehashed --usernames --dtmf --keywords "Philadelphia" 5555551212
 ```
 
-This will show:
-- Exact ddgr commands being run
-- Sample results from each search
-- Error messages and warnings
+### All Options
 
-The script accepts phone numbers in any format - it will strip out non-digit characters automatically.
+| Flag | Description |
+|------|-------------|
+| `--setup` | Run API configuration wizard |
+| `--verbose`, `-v` | Show complete result listings with URLs |
+| `--colorful`, `-c` | Enable colorful display mode |
+| `--keywords`, `-k` | Add search keywords (e.g., "John Smith") |
+| `--delay` | Set delay between searches (default: 2 seconds) |
+| `--dossier` | Generate dossier (person or business) |
+| `--site` | Limit search to specific site (whitepages.com, facebook.com, etc.) |
+| `--dehashed` | Include Dehashed breach database search |
+| `--dtmf` | Play DTMF tones while searching |
+| `--usernames` | Focus on username correlation analysis |
+| `--debug`, `-d` | Enable debug output |
+
+### Site-Specific Searches
+
+Available sites for `--site` option:
+- `yellowpages.com` - Business/residential directory
+- `whitepages.com` - People finder
+- `thatsthem.com` - Reverse phone lookup
+- `information.com` - Public records
+- `instantcheckmate.com` - Background checks
+- `facebook.com` - Social media
+- `yahoo.com` - General search
+
+### Example Workflow
+
+```bash
+# 1. Setup API keys (one-time)
+./telespot.py --setup
+
+# 2. Basic search
+./telespot.py 2155551234
+
+# 3. Search with context
+./telespot.py --keywords "Philadelphia lawyer" 2155551234
+
+# 4. Detailed investigation
+./telespot.py --verbose --colorful --dossier person 2155551234
+
+# 5. Business lookup
+./telespot.py --keywords "Acme Industries" --dossier business 8005551212
+```
 
 ## 🔢 Search Formats
 
-The script searches for the following format variations via **official APIs**:
+The script searches for **10 different format variations** via APIs:
 
+### Basic Formats (4)
 1. `555-555-1212` - Dashes
-2. `(555) 555-1212` - Parentheses and dashes
-3. `5555551212` - Digits only
-4. `1 555-555-1212` - Country code with dashes
+2. `5555551212` - Digits only
+3. `(555) 555-1212` - Parentheses and dashes
+4. `+1555-555-1212` - International format
 
-Each format is searched using configured APIs:
+### Quoted Formats (4)
+5. `"555-555-1212"` - Quoted dashes (exact match)
+6. `"5555551212"` - Quoted digits (exact match)
+7. `"(555) 555-1212"` - Quoted parentheses (exact match)
+8. `"+1555-555-1212"` - Quoted international (exact match)
+
+### Special Formats (2)
+9. `(555-555-1212)` - Parentheses variant
+10. `"(555) 555-1212)"` - Quoted parentheses variant
+
+**Why quoted searches matter:** Wrapping queries in quotes forces exact matching, which dramatically improves phone number search accuracy!
+
+### Search Engines
+
+Each format is searched using:
+- 🦆 **DuckDuckGo API** (always included, free, no API needed)
 - 🔵 **Google Custom Search API** (up to 10 results per format, if configured)
 - 🟢 **Bing Search API** (up to 10 results per format, if configured)
-- 🦆 **DuckDuckGo API** (fallback if no APIs configured, limited results)
 
-**Total**: Up to 80 results per search with both APIs configured (4 formats × 2 engines × 10 results)
+**Total**: Up to 300 results per search with all engines configured (10 formats × 3 engines × 10 results)
+
+### With Keywords
+
+When you add keywords (e.g., `--keywords "John Smith"`):
+```bash
+555-555-1212 + John+Smith
+"5555551212" + John+Smith
+(555) 555-1212 + John+Smith
+# ... and so on for all 10 formats
+```
 
 ## 📊 Output
 
@@ -237,35 +332,54 @@ Each format is searched using configured APIs:
 
 The script provides:
 
-- **Total results found** across all search engines
+- **🎯 Confidence Score** (0-100%) - How reliable the results appear
+- **Total Results** found across all search engines
+- **Unique URLs** discovered
 - **Results by source** (Google, Bing, DuckDuckGo breakdown)
 - **📛 Names found** - People's names associated with the number
 - **📍 Locations mentioned** - Cities, states, and zip codes
 - **🔍 Key insights** - Most frequently appearing name and location
 
-### Example Output
+### Confidence Score Calculation
+
+| Score Range | Rating | Meaning |
+|-------------|--------|---------|
+| 75-100% | 🟢 HIGH | Strong evidence, consistent patterns |
+| 50-74% | 🟡 MEDIUM | Some evidence, moderate patterns |
+| 0-49% | 🔴 LOW | Weak evidence, inconsistent patterns |
+
+The score is based on:
+- Number of results found (30%)
+- Name consistency across results (35%)
+- Location consistency across results (25%)
+- Multiple source verification (10%)
+
+### Example Output (Standard Mode)
 
 ```
 ================================================================================
 PATTERN ANALYSIS SUMMARY
 ================================================================================
 
+🎯 Confidence Score: 78% (HIGH)
+
 Total Results Found: 42
+Unique URLs: 28
 
 Results by Source:
-  • Google: 18 results
-  • Bing: 15 results
-  • DuckDuckGo: 9 results
+  • DuckDuckGo: 8 results
+  • Google: 20 results
+  • Bing: 14 results
 
 📛 Names Found:
-  • John Smith: mentioned 8 time(s)
+  • John Smith: mentioned 12 time(s)
   • Jane Doe: mentioned 3 time(s)
   • Mike Johnson: mentioned 2 time(s)
 
 📍 Locations Mentioned:
-  • Philadelphia, PA: 12 occurrence(s)
-  • PA: 8 occurrence(s)
-  • 19102: 3 occurrence(s)
+  • Philadelphia, PA: 15 occurrence(s)
+  • PA: 10 occurrence(s)
+  • 19102: 4 occurrence(s)
 
 🔍 Key Insights:
   • Most associated name: John Smith
@@ -273,20 +387,120 @@ Results by Source:
 ================================================================================
 ```
 
+### Example Output (Verbose Mode)
+
+With `--verbose`, you also get complete listings:
+
+```
+================================================================================
+VERBOSE RESULTS - ALL LISTINGS
+================================================================================
+
+Format: "555-555-1212"
+────────────────────────────────────────────────────────────────────────────────
+
+[1] John Smith - Philadelphia Lawyer
+🔗 URL: https://example.com/john-smith
+📄 Description: Attorney John Smith, practicing in Philadelphia since 2010...
+🔍 Source: Google
+
+[2] Smith & Associates Law Firm
+🔗 URL: https://smithlaw.com/contact
+📄 Description: Contact us at (555) 555-1212...
+🔍 Source: Bing
+
+...
+```
+
+### Dossier Mode Output
+
+With `--dossier person` or `--dossier business`:
+
+```
+📋 DOSSIER TYPE: PERSON
+
+🎯 Confidence Score: 82% (HIGH)
+...
+[Enhanced analysis focused on personal/business information]
+```
+
 ## 💾 Saving Results
 
-After the analysis, you'll be prompted to save detailed results to a JSON file:
+After the analysis, you'll be prompted to save results:
 
 ```
-Save detailed results to file? (y/n): y
-Results saved to: telespot_results_5555551212.json
+Save results to file? (y/n): y
+Enter filename (or press Enter for default): 
+✓ Results saved to: telespot_5555551212_20241228_143022.txt
 ```
 
-The JSON file contains:
-- Original phone number
-- All search format variations used
-- Complete search results from all engines
-- Full pattern analysis data (names and locations)
+### File Format
+
+Results are saved as **text files (.txt)** by default, containing:
+
+1. **Header** - Phone number, search date, confidence score
+2. **Summary** - Total results, sources, names, locations
+3. **Detailed Results** - Complete listings with URLs, titles, and descriptions
+
+### Custom Naming
+
+You can specify a custom filename:
+```
+Enter filename (or press Enter for default): john_smith_investigation
+✓ Results saved to: john_smith_investigation.txt
+```
+
+Or use the default (recommended):
+```
+telespot_[PHONE]_[TIMESTAMP].txt
+Example: telespot_5555551212_20241228_143022.txt
+```
+
+### File Contents Example
+
+```
+================================================================================
+TELESPOT SEARCH RESULTS
+================================================================================
+
+Phone Number: 5555551212
+Search Date: 2024-12-28 14:30:22
+Confidence Score: 78%
+
+================================================================================
+SUMMARY
+================================================================================
+
+Total Results: 42
+Unique URLs: 28
+
+Results by Source:
+  - DuckDuckGo: 8 results
+  - Google: 20 results
+  - Bing: 14 results
+
+Names Found:
+  - John Smith: 12 mention(s)
+  - Jane Doe: 3 mention(s)
+
+Locations Mentioned:
+  - Philadelphia, PA: 15 occurrence(s)
+  - PA: 10 occurrence(s)
+
+================================================================================
+DETAILED RESULTS
+================================================================================
+
+Format: "555-555-1212"
+--------------------------------------------------------------------------------
+
+[1] John Smith - Philadelphia Lawyer
+URL: https://example.com/john-smith
+Source: Google
+Description: Attorney John Smith has been practicing law in Philadelphia...
+
+...
+```
 
 ## ⏱️ Rate Limiting
 
