@@ -9,6 +9,7 @@ import requests
 import time
 import re
 import sys
+import random  # Added for header rotation
 from collections import Counter
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus
@@ -20,7 +21,7 @@ ASCII_LOGO = """
    ██║   ██╔══╝  ██║     ██╔══╝  ╚════██║██╔═══╝ ██║   ██║   ██║   
    ██║   ███████╗███████╗███████╗███████║██║     ╚██████╔╝   ██║   
    ╚═╝   ╚══════╝╚══════╝╚══════╝╚══════╝╚═╝      ╚═════╝    ╚═╝   
-                                                         version 2.0
+                                                         version 2.1
 """
 
 # ANSI color codes for terminal output
@@ -52,6 +53,25 @@ US_STATES = {
     'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia',
     'WI': 'Wisconsin', 'WY': 'Wyoming'
 }
+
+
+def get_random_header():
+    """Generates a random User-Agent header to bypass basic bot detection"""
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0'
+    ]
+    return {
+        'User-Agent': random.choice(user_agents),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+    }
 
 
 def generate_phone_formats(phone_number):
@@ -92,13 +112,10 @@ def generate_phone_formats(phone_number):
 def search_google(query, num_results=10):
     """Search Google and extract results"""
     results = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
     
     try:
         url = f'https://www.google.com/search?q={quote_plus(query)}&num={num_results}'
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=get_random_header(), timeout=10)
         
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -129,13 +146,10 @@ def search_google(query, num_results=10):
 def search_bing(query, num_results=10):
     """Search Bing and extract results"""
     results = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
     
     try:
         url = f'https://www.bing.com/search?q={quote_plus(query)}&count={num_results}'
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=get_random_header(), timeout=10)
         
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -166,13 +180,10 @@ def search_bing(query, num_results=10):
 def search_duckduckgo(query, num_results=10):
     """Search DuckDuckGo and extract results"""
     results = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
     
     try:
         url = f'https://html.duckduckgo.com/html/?q={quote_plus(query)}'
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=get_random_header(), timeout=10)
         
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
