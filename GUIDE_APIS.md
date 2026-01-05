@@ -1,270 +1,212 @@
 # telespot API Setup Guide
 
-This guide covers setting up optional API integrations for enhanced phone number lookups.
-
-## Overview
-
-telespot works without any APIs by scraping search engines directly. However, APIs can provide:
-- Validated carrier information
-- Line type (mobile, landline, VoIP)
-- Caller ID names (CNAM)
-- More accurate location data
-- Higher reliability
+This guide covers setting up the APIs for telespot.
 
 ## Quick Setup
 
-Run the interactive setup:
+Run the interactive wizard:
 ```bash
-python3 telespot.py --setup
+./telespot.py --setup
 ```
 
-This will guide you through configuring each API.
+## APIs Overview
+
+| API | Required | Free Tier | Purpose |
+|-----|----------|-----------|---------|
+| Google Custom Search | Recommended | 100/day | Best results |
+| Bing Search | Recommended | 1,000/month | Good backup |
+| DuckDuckGo | Built-in | Unlimited | Always works |
+| Dehashed | Optional | Paid | Breach data |
 
 ---
 
-## Available APIs
+## 1. Google Custom Search API
 
-### 1. NumVerify (Recommended for Free)
+**Free tier:** 100 searches/day
 
-**What it provides:**
-- Phone number validation
-- Carrier name
-- Line type
-- Location
-- Country information
+### Step 1: Get API Key
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select existing)
+3. Navigate to **APIs & Services** → **Library**
+4. Search for "Custom Search API" and **Enable** it
+5. Go to **APIs & Services** → **Credentials**
+6. Click **Create Credentials** → **API Key**
+7. Copy the API key
 
-**Free tier:** 100 requests/month
+### Step 2: Create Custom Search Engine
+1. Go to [Programmable Search Engine](https://cse.google.com/cse/)
+2. Click **Add** to create a new search engine
+3. Under "Sites to search", enter `*.com` (or leave empty)
+4. Name your search engine
+5. Click **Create**
+6. Go to **Control Panel** for your search engine
+7. Enable **Search the entire web**
+8. Copy the **Search engine ID** (cx parameter)
 
-**Setup:**
-1. Go to https://numverify.com/
-2. Click "Get Free API Key"
-3. Create an account
-4. Copy your API key
-5. Add to config.txt:
-   ```
-   numverify_api_key=YOUR_KEY_HERE
-   ```
-
----
-
-### 2. AbstractAPI
-
-**What it provides:**
-- Phone validation
-- Carrier details
-- Line type
-- Location data
-
-**Free tier:** 250 requests/month
-
-**Setup:**
-1. Go to https://www.abstractapi.com/phone-validation-api
-2. Click "Get Started Free"
-3. Create an account
-4. Go to Dashboard → Phone Validation
-5. Copy your API key
-6. Add to config.txt:
-   ```
-   abstract_api_key=YOUR_KEY_HERE
-   ```
-
----
-
-### 3. Twilio (Paid)
-
-**What it provides:**
-- Carrier lookup
-- Caller ID name
-- Line type
-- Most accurate data
-
-**Cost:** ~$0.005 per lookup
-
-**Setup:**
-1. Go to https://www.twilio.com/
-2. Create an account
-3. Go to Console → Account → API credentials
-4. Copy Account SID and Auth Token
-5. Add to config.txt:
-   ```
-   twilio_account_sid=YOUR_ACCOUNT_SID
-   twilio_auth_token=YOUR_AUTH_TOKEN
-   ```
-
----
-
-### 4. OpenCNAM (Paid)
-
-**What it provides:**
-- Caller ID Name (CNAM)
-- Real name lookups
-- Business name lookups
-
-**Cost:** ~$0.004 per lookup
-
-**Setup:**
-1. Go to https://www.opencnam.com/
-2. Create an account
-3. Go to Dashboard → API Credentials
-4. Copy Account SID and Auth Token
-5. Add to config.txt:
-   ```
-   opencnam_account_sid=YOUR_ACCOUNT_SID
-   opencnam_auth_token=YOUR_AUTH_TOKEN
-   ```
-
----
-
-### 5. Telnyx (Paid)
-
-**What it provides:**
-- Phone number intelligence
-- Carrier data
-- Number portability info
-
-**Setup:**
-1. Go to https://portal.telnyx.com/
-2. Create an account
-3. Go to API Keys
-4. Generate a new key
-5. Add to config.txt:
-   ```
-   telnyx_api_key=YOUR_API_KEY
-   ```
-
----
-
-## Configuration File
-
-All API keys are stored in `config.txt`:
-
-```ini
-# telespot Configuration File
-
-# API Keys
-numverify_api_key=abc123def456
-abstract_api_key=xyz789uvw012
-twilio_account_sid=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-twilio_auth_token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-opencnam_account_sid=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-opencnam_auth_token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-telnyx_api_key=KEY0123456789ABCDEF
-
-# Settings
-default_country_code=+1
-rate_limit_min=3
-rate_limit_max=5
+### Step 3: Add to telespot
+```bash
+./telespot.py --setup
+# Enter your Google API Key
+# Enter your CSE ID
 ```
 
 ---
 
-## Check API Status
+## 2. Bing Search API (Azure)
 
-See which APIs are configured:
+**Free tier:** 1,000 searches/month
 
+### Step 1: Create Azure Account
+1. Go to [Azure Portal](https://portal.azure.com/)
+2. Sign up for a free account (if needed)
+
+### Step 2: Create Bing Search Resource
+1. Click **Create a resource**
+2. Search for "Bing Search v7"
+3. Click **Create**
+4. Fill in:
+   - Subscription: Your subscription
+   - Resource group: Create new or select existing
+   - Name: Any name (e.g., "telespot-bing")
+   - Pricing tier: **F1** (Free - 1,000 calls/month)
+5. Click **Review + Create** → **Create**
+
+### Step 3: Get API Key
+1. Go to your Bing Search resource
+2. Click **Keys and Endpoint**
+3. Copy **Key 1** or **Key 2**
+
+### Step 4: Add to telespot
 ```bash
-python3 telespot.py --api-status
+./telespot.py --setup
+# Enter your Bing API Key
+```
+
+---
+
+## 3. DuckDuckGo Instant Answer API
+
+**No setup required!**
+
+DuckDuckGo's Instant Answer API is free and doesn't require an API key. It's automatically included in every search.
+
+Note: Results are limited to instant answers and related topics, not full web search results.
+
+---
+
+## 4. Dehashed API (Optional)
+
+**Paid service** - For breach database searches
+
+### Step 1: Create Account
+1. Go to [Dehashed](https://www.dehashed.com/)
+2. Create an account and purchase credits
+
+### Step 2: Get API Key
+1. Log into Dehashed
+2. Go to your account settings
+3. Find your API credentials
+4. Format: `email:api_key`
+
+### Step 3: Add to telespot
+```bash
+./telespot.py --setup
+# Enter: your_email@example.com:your_api_key
+```
+
+### Usage
+```bash
+./telespot.py 5555551234 --dehashed
+```
+
+---
+
+## Checking Configuration
+
+View your API status:
+```bash
+./telespot.py --api-status
 ```
 
 Output:
 ```
 API Configuration Status:
 ----------------------------------------
-  [+] NumVerify: LOADED
-  [+] AbstractAPI: LOADED
-  [-] Twilio: NOT CONFIGURED
-  [-] OpenCNAM: NOT CONFIGURED
-  [-] Telnyx: NOT CONFIGURED
+  [+] Google: CONFIGURED
+  [+] Bing: CONFIGURED
+  [+] DuckDuckGo: CONFIGURED
+  [-] Dehashed: NOT CONFIGURED
 ----------------------------------------
-  2/5 APIs configured
+  3/4 APIs configured
 ```
 
 ---
 
-## API Comparison
+## Configuration File
 
-| API | Free Tier | Cost | Best For |
-|-----|-----------|------|----------|
-| NumVerify | 100/mo | Free | Basic validation |
-| AbstractAPI | 250/mo | Free | More free lookups |
-| Twilio | None | $0.005 | Professional use |
-| OpenCNAM | None | $0.004 | Name lookups |
-| Telnyx | None | Varies | Enterprise |
+API keys are stored in `.telespot_config`:
 
----
+```ini
+# telespot Configuration
 
-## Best Practices
+# Google Custom Search API
+google_api_key=AIzaSy...
+google_cse_id=017576...
 
-### For Casual Use
-- Set up NumVerify (free 100/month)
-- Set up AbstractAPI (free 250/month)
-- Total: 350 free lookups per month
+# Bing Search API (Azure)
+bing_api_key=a1b2c3...
 
-### For Regular Use
-- Add Twilio for accurate carrier info
-- Add OpenCNAM for name lookups
-- Budget: ~$5-20/month depending on usage
+# Dehashed API (optional)
+dehashed_api_key=email@example.com:key123
 
-### For Professional Use
-- Configure all APIs
-- Set up multiple accounts for redundancy
-- Consider enterprise plans
+# Settings
+default_country_code=+1
+delay_seconds=2
+```
 
----
-
-## Security Notes
-
-1. **Never commit config.txt to public repositories**
-   - Add `config.txt` to `.gitignore`
-
-2. **Protect your API keys**
-   - Don't share them
-   - Rotate periodically
-   - Monitor usage
-
-3. **Set file permissions**
-   ```bash
-   chmod 600 config.txt
-   ```
+**Security:** This file has 600 permissions (owner read/write only).
 
 ---
 
 ## Troubleshooting
 
-### "API key not working"
-- Check for typos
-- Verify the key is active in your account
-- Check if you've exceeded rate limits
+### "Google API quota exceeded"
+- Free tier: 100 queries/day
+- Resets at midnight UTC
+- Use Bing as backup
 
-### "API returning errors"
-- Check account balance (for paid APIs)
-- Verify phone number format
-- Check API status pages
+### "Bing API key invalid"
+- Verify key in Azure portal
+- Check if resource is still active
+- Ensure you're using Bing Search v7
 
-### "No API data in results"
-- Run `--api-status` to verify configuration
-- Use `-d` debug mode to see API responses
-- Check your internet connection
+### "No results from DuckDuckGo"
+- DuckDuckGo returns instant answers only
+- Works better for well-known topics
+- Use Google/Bing for comprehensive results
+
+### "Dehashed API error"
+- Check your API key format (email:key)
+- Verify account has credits
+- Check Dehashed service status
 
 ---
 
 ## Rate Limits
 
-| API | Rate Limit |
-|-----|-----------|
-| NumVerify Free | 100/month |
-| AbstractAPI Free | 250/month |
-| Twilio | 100/second |
-| OpenCNAM | Varies |
+| API | Limit | Reset |
+|-----|-------|-------|
+| Google | 100/day | Midnight UTC |
+| Bing | 1,000/month | Monthly |
+| DuckDuckGo | None | N/A |
+| Dehashed | Based on plan | N/A |
 
 ---
 
-## Need Help?
+## Best Practices
 
-- NumVerify: https://numverify.com/documentation
-- AbstractAPI: https://docs.abstractapi.com/phone-validation
-- Twilio: https://www.twilio.com/docs/lookup/api
-- OpenCNAM: https://docs.opencnam.com/
-- Telnyx: https://developers.telnyx.com/docs/api/v2/number-lookup
-
-Or open an issue: https://github.com/thumpersecure/Telespot/issues
+1. **Start with Google + Bing** - Best coverage
+2. **Keep DuckDuckGo enabled** - Free backup
+3. **Use Dehashed sparingly** - Save for important searches
+4. **Monitor usage** - Check API dashboards regularly
+5. **Rotate if needed** - Create multiple API keys if hitting limits
