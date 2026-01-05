@@ -19,9 +19,11 @@ Phone number OSINT tool. Searches Google, Bing, DuckDuckGo & Dehashed APIs to fi
 ```bash
 git clone https://github.com/thumpersecure/Telespot.git
 cd Telespot
+python3 -m venv telvenv
+source telvenv/bin/activate
 pip install -r requirements.txt
 ./telespot.py --setup
-./telespot.py 8885551212
+./telespot.py
 ```
 
 ## Features
