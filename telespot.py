@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-telespot - Multi-Engine Phone Number OSINT Tool
+telespot - Phone Number OSINT Tool
 Version 5.0-beta
 
-Searches for phone numbers across 10 search engines with intelligent
-pattern analysis for names, locations, and business associations.
+API-based phone number search across Google, Bing, and DuckDuckGo
+with pattern recognition for names, locations, and usernames.
 """
 
 import requests
@@ -13,35 +13,26 @@ import re
 import sys
 import os
 import json
-import random
 import argparse
 import subprocess
 from collections import Counter
 from datetime import datetime
 from urllib.parse import quote_plus
 
-# Optional imports with graceful fallback
-try:
-    from bs4 import BeautifulSoup
-    BS4_AVAILABLE = True
-except ImportError:
-    BS4_AVAILABLE = False
-
 VERSION = "5.0-beta"
 REPO_URL = "https://github.com/thumpersecure/Telespot"
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.txt")
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".telespot_config")
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ASCII LOGO - lowercase telespot with blue/red twinkle on white
+# ASCII LOGO
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_ascii_logo():
     """Returns the ASCII logo with blue/red twinkle effect on white"""
-    # Color codes
-    W = '\033[97m'   # Bright white
-    B = '\033[94m'   # Blue
-    R = '\033[91m'   # Red
-    E = '\033[0m'    # End/reset
+    W = '\033[97m'
+    B = '\033[94m'
+    R = '\033[91m'
+    E = '\033[0m'
 
     logo = f"""
 {W}  _       {R}*{W}      _                     _   {B}*{W}
@@ -52,6 +43,7 @@ def get_ascii_logo():
 {B}*{W}                    |_|    {R}*{W}   {B}v{VERSION}{E}
 """
     return logo
+
 
 def get_ascii_logo_mono():
     """Returns monochrome ASCII logo"""
@@ -69,9 +61,7 @@ def get_ascii_logo_mono():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class Colors:
-    """ANSI color codes for terminal output"""
-    # Base colors
-    BLACK = '\033[30m'
+    """ANSI color codes"""
     RED = '\033[91m'
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
@@ -79,160 +69,77 @@ class Colors:
     MAGENTA = '\033[95m'
     CYAN = '\033[96m'
     WHITE = '\033[97m'
-
-    # Styles
     BOLD = '\033[1m'
     DIM = '\033[2m'
-    UNDERLINE = '\033[4m'
     END = '\033[0m'
-
-    # Rainbow sequence
     RAINBOW = ['\033[91m', '\033[93m', '\033[92m', '\033[96m', '\033[94m', '\033[95m']
-
-    # Monotone (grayscale)
-    MONO_LIGHT = '\033[37m'
-    MONO_DARK = '\033[90m'
 
 
 class ColorMode:
     """Manages color output modes"""
-    def __init__(self, mode='mono'):
-        self.mode = mode  # 'mono', 'colorful', 'off'
+    def __init__(self, mode='normal'):
+        self.mode = mode  # 'normal', 'colorful', 'off'
         self._rainbow_idx = 0
 
     def _get_rainbow(self):
-        """Get next rainbow color"""
         color = Colors.RAINBOW[self._rainbow_idx % len(Colors.RAINBOW)]
         self._rainbow_idx += 1
         return color
 
     def text(self, text, color_type='normal'):
-        """Apply color based on mode"""
         if self.mode == 'off':
             return text
-
         if self.mode == 'colorful':
-            # Rainbow mode - each call gets next rainbow color
             return f"{self._get_rainbow()}{text}{Colors.END}"
-
-        # Monotone mode - use grayscale
-        if color_type == 'header':
-            return f"{Colors.WHITE}{Colors.BOLD}{text}{Colors.END}"
-        elif color_type == 'success':
-            return f"{Colors.MONO_LIGHT}{text}{Colors.END}"
-        elif color_type == 'warning':
-            return f"{Colors.MONO_DARK}{text}{Colors.END}"
-        elif color_type == 'error':
-            return f"{Colors.WHITE}{text}{Colors.END}"
-        elif color_type == 'info':
-            return f"{Colors.MONO_LIGHT}{text}{Colors.END}"
-        else:
-            return f"{Colors.MONO_LIGHT}{text}{Colors.END}"
+        # Normal mode
+        colors = {
+            'header': Colors.CYAN,
+            'success': Colors.GREEN,
+            'warning': Colors.YELLOW,
+            'error': Colors.RED,
+            'info': Colors.BLUE,
+        }
+        c = colors.get(color_type, '')
+        return f"{c}{text}{Colors.END}" if c else text
 
     def header(self, text):
         return self.text(text, 'header')
-
     def success(self, text):
         return self.text(text, 'success')
-
     def warning(self, text):
         return self.text(text, 'warning')
-
     def error(self, text):
         return self.text(text, 'error')
-
     def info(self, text):
         return self.text(text, 'info')
 
 
-# Global color mode instance
-color = ColorMode('mono')
+color = ColorMode('normal')
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# USER AGENT ROTATION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-USER_AGENTS = [
-    # Chrome on Windows
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
-    # Chrome on Mac
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    # Chrome on Linux
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    # Firefox
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.1; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    # Edge
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-    # Safari
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-    # Mobile
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-]
-
-
-def get_random_headers():
-    """Generate random request headers with rotating User-Agent"""
-    return {
-        'User-Agent': random.choice(USER_AGENTS),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Cache-Control': 'max-age=0',
-    }
-
-
-def rate_limit():
-    """Random rate limiting between 3-5 seconds"""
-    delay = random.uniform(3.0, 5.0)
-    time.sleep(delay)
-    return delay
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION MANAGEMENT
+# CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class Config:
-    """Configuration manager for API keys and settings"""
+    """Configuration manager"""
 
-    DEFAULT_CONFIG = {
-        'numverify_api_key': '',
-        'abstract_api_key': '',
-        'twilio_account_sid': '',
-        'twilio_auth_token': '',
-        'opencnam_account_sid': '',
-        'opencnam_auth_token': '',
-        'telnyx_api_key': '',
+    DEFAULT = {
+        'google_api_key': '',
+        'google_cse_id': '',
+        'bing_api_key': '',
+        'dehashed_api_key': '',
         'default_country_code': '+1',
-        'rate_limit_min': '3',
-        'rate_limit_max': '5',
-        'default_output_format': 'text',
-        'verbose': 'false',
-        'colorful_mode': 'false',
+        'delay_seconds': '2',
     }
 
-    def __init__(self, config_path=CONFIG_FILE):
-        self.config_path = config_path
-        self.settings = dict(self.DEFAULT_CONFIG)
+    def __init__(self):
+        self.settings = dict(self.DEFAULT)
         self.load()
 
     def load(self):
-        """Load configuration from file"""
-        if os.path.exists(self.config_path):
+        if os.path.exists(CONFIG_FILE):
             try:
-                with open(self.config_path, 'r') as f:
+                with open(CONFIG_FILE, 'r') as f:
                     for line in f:
                         line = line.strip()
                         if line and not line.startswith('#') and '=' in line:
@@ -242,22 +149,21 @@ class Config:
                 print(f"Warning: Could not load config: {e}")
 
     def save(self):
-        """Save configuration to file"""
         try:
-            with open(self.config_path, 'w') as f:
-                f.write("# telespot Configuration File\n")
+            with open(CONFIG_FILE, 'w') as f:
+                f.write("# telespot Configuration\n")
                 f.write(f"# Generated: {datetime.now().isoformat()}\n\n")
-
-                f.write("# API Keys\n")
-                for key in ['numverify_api_key', 'abstract_api_key', 'twilio_account_sid',
-                           'twilio_auth_token', 'opencnam_account_sid', 'opencnam_auth_token',
-                           'telnyx_api_key']:
-                    f.write(f"{key}={self.settings.get(key, '')}\n")
-
-                f.write("\n# Settings\n")
-                for key in ['default_country_code', 'rate_limit_min', 'rate_limit_max',
-                           'default_output_format', 'verbose', 'colorful_mode']:
-                    f.write(f"{key}={self.settings.get(key, '')}\n")
+                f.write("# Google Custom Search API\n")
+                f.write(f"google_api_key={self.settings.get('google_api_key', '')}\n")
+                f.write(f"google_cse_id={self.settings.get('google_cse_id', '')}\n\n")
+                f.write("# Bing Search API (Azure)\n")
+                f.write(f"bing_api_key={self.settings.get('bing_api_key', '')}\n\n")
+                f.write("# Dehashed API (optional)\n")
+                f.write(f"dehashed_api_key={self.settings.get('dehashed_api_key', '')}\n\n")
+                f.write("# Settings\n")
+                f.write(f"default_country_code={self.settings.get('default_country_code', '+1')}\n")
+                f.write(f"delay_seconds={self.settings.get('delay_seconds', '2')}\n")
+            os.chmod(CONFIG_FILE, 0o600)
             return True
         except Exception as e:
             print(f"Error saving config: {e}")
@@ -270,31 +176,27 @@ class Config:
         self.settings[key] = value
 
     def get_api_status(self):
-        """Return status of all APIs (loaded/unloaded)"""
-        apis = {
-            'NumVerify': bool(self.settings.get('numverify_api_key')),
-            'AbstractAPI': bool(self.settings.get('abstract_api_key')),
-            'Twilio': bool(self.settings.get('twilio_account_sid') and self.settings.get('twilio_auth_token')),
-            'OpenCNAM': bool(self.settings.get('opencnam_account_sid') and self.settings.get('opencnam_auth_token')),
-            'Telnyx': bool(self.settings.get('telnyx_api_key')),
+        return {
+            'Google': bool(self.settings.get('google_api_key') and self.settings.get('google_cse_id')),
+            'Bing': bool(self.settings.get('bing_api_key')),
+            'DuckDuckGo': True,  # Always available (no API key needed)
+            'Dehashed': bool(self.settings.get('dehashed_api_key')),
         }
-        return apis
 
     def display_api_status(self):
-        """Display API configuration status"""
         print(f"\n{color.header('API Configuration Status:')}")
         print("-" * 40)
         apis = self.get_api_status()
         for api, loaded in apis.items():
-            status = "LOADED" if loaded else "NOT CONFIGURED"
+            status = "CONFIGURED" if loaded else "NOT CONFIGURED"
             symbol = "[+]" if loaded else "[-]"
-            print(f"  {symbol} {api}: {status}")
+            status_color = color.success(status) if loaded else color.warning(status)
+            print(f"  {symbol} {api}: {status_color}")
         print("-" * 40)
-        loaded_count = sum(1 for v in apis.values() if v)
-        print(f"  {loaded_count}/{len(apis)} APIs configured\n")
+        configured = sum(1 for v in apis.values() if v)
+        print(f"  {configured}/{len(apis)} APIs configured\n")
 
 
-# Global config instance
 config = Config()
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -317,67 +219,27 @@ US_STATES = {
     'WI': 'Wisconsin', 'WY': 'Wyoming', 'DC': 'District of Columbia'
 }
 
-# International country codes
 COUNTRY_CODES = {
-    '+1': 'USA/Canada',
-    '+44': 'United Kingdom',
-    '+49': 'Germany',
-    '+33': 'France',
-    '+61': 'Australia',
-    '+81': 'Japan',
-    '+86': 'China',
-    '+91': 'India',
-    '+7': 'Russia',
-    '+55': 'Brazil',
-    '+52': 'Mexico',
-    '+34': 'Spain',
-    '+39': 'Italy',
-    '+31': 'Netherlands',
-    '+46': 'Sweden',
-    '+47': 'Norway',
-    '+45': 'Denmark',
-    '+358': 'Finland',
-    '+353': 'Ireland',
-    '+41': 'Switzerland',
-    '+43': 'Austria',
-    '+48': 'Poland',
-    '+420': 'Czech Republic',
-    '+36': 'Hungary',
-    '+30': 'Greece',
-    '+90': 'Turkey',
-    '+972': 'Israel',
-    '+971': 'UAE',
-    '+966': 'Saudi Arabia',
-    '+65': 'Singapore',
-    '+82': 'South Korea',
-    '+64': 'New Zealand',
-    '+27': 'South Africa',
-    '+234': 'Nigeria',
-    '+20': 'Egypt',
-    '+63': 'Philippines',
-    '+62': 'Indonesia',
-    '+60': 'Malaysia',
-    '+66': 'Thailand',
-    '+84': 'Vietnam',
+    '+1': 'USA/Canada', '+44': 'United Kingdom', '+49': 'Germany',
+    '+33': 'France', '+61': 'Australia', '+81': 'Japan',
+    '+86': 'China', '+91': 'India', '+7': 'Russia',
+    '+55': 'Brazil', '+52': 'Mexico', '+34': 'Spain',
 }
 
-# DTMF tones mapping
 DTMF_MAP = {
     '0': '0', '1': '1', '2': '2ABC', '3': '3DEF',
     '4': '4GHI', '5': '5JKL', '6': '6MNO',
     '7': '7PQRS', '8': '8TUV', '9': '9WXYZ',
-    '*': '*', '#': '#'
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PHONE NUMBER FORMATTING
+# PHONE NUMBER FORMATS (10 total: 4 basic + 4 quoted + 2 special)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_phone_formats(phone_number, country_code='+1'):
-    """Generate various phone number formats for searching"""
+    """Generate 10 phone number format variations for searching"""
     digits = re.sub(r'\D', '', phone_number)
 
-    # Handle country code in input
     if country_code == '+1':
         if len(digits) == 11 and digits.startswith('1'):
             digits = digits[1:]
@@ -386,13 +248,10 @@ def generate_phone_formats(phone_number, country_code='+1'):
         area = digits[0:3]
         prefix = digits[3:6]
         line = digits[6:10]
-        cc = '1'
     else:
-        # International numbers - more flexible
         cc = country_code.lstrip('+')
         if len(digits) < 7:
             return []
-        # Use last 10 digits if available, otherwise use what we have
         if len(digits) >= 10:
             area = digits[-10:-7]
             prefix = digits[-7:-4]
@@ -402,464 +261,240 @@ def generate_phone_formats(phone_number, country_code='+1'):
             prefix = digits[3:6] if len(digits) >= 6 else ''
             line = digits[6:] if len(digits) > 6 else ''
 
-    formats = [
-        f'+{cc}{area}{prefix}{line}',
-        f'"+{cc}{area}{prefix}{line}"',
-        f'({area}) {prefix}-{line}',
-        f'"{cc} ({area}) {prefix}-{line}"',
-        f'"{area}-{prefix}-{line}"',
-        f'{area}-{prefix}-{line}',
-        f'{area}.{prefix}.{line}',
-        f'{area}{prefix}{line}',
-        f'"{area}{prefix}{line}"',
-        f'{area} {prefix} {line}',
+    # 4 Basic formats
+    basic = [
+        f'{area}-{prefix}-{line}',                    # 215-555-1234
+        f'{area}{prefix}{line}',                      # 2155551234
+        f'({area}) {prefix}-{line}',                  # (215) 555-1234
+        f'+1{area}-{prefix}-{line}',                  # +1215-555-1234
     ]
 
-    return formats
+    # 4 Quoted formats (exact match)
+    quoted = [
+        f'"{area}-{prefix}-{line}"',                  # "215-555-1234"
+        f'"{area}{prefix}{line}"',                    # "2155551234"
+        f'"({area}) {prefix}-{line}"',                # "(215) 555-1234"
+        f'"+1{area}-{prefix}-{line}"',                # "+1215-555-1234"
+    ]
+
+    # 2 Special formats
+    special = [
+        f'({area}-{prefix}-{line})',                  # (215-555-1234)
+        f'"({area}) {prefix}-{line})"',               # "(215) 555-1234)"
+    ]
+
+    return basic + quoted + special
 
 
 def get_dtmf_representation(phone_number):
     """Convert phone number to DTMF representation"""
     digits = re.sub(r'\D', '', phone_number)
-    dtmf = []
-    for d in digits:
-        if d in DTMF_MAP:
-            dtmf.append(DTMF_MAP[d])
-    return ' '.join(dtmf)
+    return ' '.join(DTMF_MAP.get(d, d) for d in digits)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SEARCH ENGINES (10 Total)
+# API SEARCH FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def search_google(query, verbose=False, debug=False):
-    """Search Google"""
+def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, debug=False):
+    """Search using Google Custom Search API"""
     results = []
+
+    if not api_key or not cse_id:
+        if debug:
+            print("    [DEBUG] Google API not configured")
+        return results
+
     try:
-        url = f'https://www.google.com/search?q={quote_plus(query)}&num=15'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            'key': api_key,
+            'cx': cse_id,
+            'q': query,
+            'num': min(num_results, 10),
+        }
+
+        response = requests.get(url, params=params, timeout=15)
 
         if debug:
-            print(f"    [DEBUG] Google status: {response.status_code}")
+            print(f"    [DEBUG] Google API status: {response.status_code}")
 
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for g in soup.find_all('div', class_='g'):
-                title_elem = g.find('h3')
-                title = title_elem.get_text() if title_elem else ''
+        if response.status_code == 200:
+            data = response.json()
+            for item in data.get('items', []):
+                results.append({
+                    'title': item.get('title', ''),
+                    'url': item.get('link', ''),
+                    'snippet': item.get('snippet', ''),
+                    'source': 'Google'
+                })
+                if verbose:
+                    print(f"      Found: {item.get('title', '')[:60]}...")
+        elif response.status_code == 429:
+            print(f"    {color.warning('Google API quota exceeded')}")
+        elif debug:
+            print(f"    [DEBUG] Google error: {response.text[:100]}")
 
-                link_elem = g.find('a')
-                url_found = link_elem.get('href', '') if link_elem else ''
-
-                snippet_elem = g.find('div', class_=['VwiC3b', 'yXK7lf', 'MUxGbd'])
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Google'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] Google error: {e}")
+            print(f"    [DEBUG] Google exception: {e}")
+
     return results
 
 
-def search_bing(query, verbose=False, debug=False):
-    """Search Bing"""
+def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False):
+    """Search using Bing Search API (Azure Cognitive Services)"""
     results = []
+
+    if not api_key:
+        if debug:
+            print("    [DEBUG] Bing API not configured")
+        return results
+
     try:
-        url = f'https://www.bing.com/search?q={quote_plus(query)}&count=15'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
+        url = "https://api.bing.microsoft.com/v7.0/search"
+        headers = {'Ocp-Apim-Subscription-Key': api_key}
+        params = {
+            'q': query,
+            'count': num_results,
+            'mkt': 'en-US',
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=15)
 
         if debug:
-            print(f"    [DEBUG] Bing status: {response.status_code}")
+            print(f"    [DEBUG] Bing API status: {response.status_code}")
 
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all('li', class_='b_algo'):
-                title_elem = item.find('h2')
-                title = title_elem.get_text() if title_elem else ''
+        if response.status_code == 200:
+            data = response.json()
+            for item in data.get('webPages', {}).get('value', []):
+                results.append({
+                    'title': item.get('name', ''),
+                    'url': item.get('url', ''),
+                    'snippet': item.get('snippet', ''),
+                    'source': 'Bing'
+                })
+                if verbose:
+                    print(f"      Found: {item.get('name', '')[:60]}...")
+        elif response.status_code == 401:
+            print(f"    {color.warning('Bing API key invalid')}")
+        elif response.status_code == 429:
+            print(f"    {color.warning('Bing API quota exceeded')}")
+        elif debug:
+            print(f"    [DEBUG] Bing error: {response.text[:100]}")
 
-                link_elem = item.find('a')
-                url_found = link_elem.get('href', '') if link_elem else ''
-
-                snippet_elem = item.find('p')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Bing'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] Bing error: {e}")
+            print(f"    [DEBUG] Bing exception: {e}")
+
     return results
 
 
-def search_duckduckgo(query, verbose=False, debug=False):
-    """Search DuckDuckGo"""
+def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False):
+    """Search using DuckDuckGo Instant Answer API"""
     results = []
+
     try:
-        url = f'https://html.duckduckgo.com/html/?q={quote_plus(query)}'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
+        # DuckDuckGo Instant Answer API
+        url = "https://api.duckduckgo.com/"
+        params = {
+            'q': query,
+            'format': 'json',
+            'no_html': 1,
+            'skip_disambig': 1,
+        }
+
+        response = requests.get(url, params=params, timeout=15)
 
         if debug:
-            print(f"    [DEBUG] DuckDuckGo status: {response.status_code}")
+            print(f"    [DEBUG] DuckDuckGo API status: {response.status_code}")
 
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for result in soup.find_all('div', class_='result')[:15]:
-                title_elem = result.find('a', class_='result__a')
-                title = title_elem.get_text() if title_elem else ''
-                url_found = title_elem.get('href', '') if title_elem else ''
+        if response.status_code == 200:
+            data = response.json()
 
-                snippet_elem = result.find('a', class_='result__snippet')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
+            # Abstract
+            if data.get('Abstract'):
+                results.append({
+                    'title': data.get('Heading', 'DuckDuckGo Result'),
+                    'url': data.get('AbstractURL', ''),
+                    'snippet': data.get('Abstract', ''),
+                    'source': 'DuckDuckGo'
+                })
+                if verbose:
+                    print(f"      Found: {data.get('Heading', '')[:60]}...")
 
-                if title or snippet:
+            # Related topics
+            for topic in data.get('RelatedTopics', [])[:num_results]:
+                if isinstance(topic, dict) and topic.get('Text'):
                     results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
+                        'title': topic.get('Text', '')[:80],
+                        'url': topic.get('FirstURL', ''),
+                        'snippet': topic.get('Text', ''),
                         'source': 'DuckDuckGo'
                     })
                     if verbose:
-                        print(f"      Found: {title[:60]}...")
+                        print(f"      Found: {topic.get('Text', '')[:60]}...")
+
+            # Results
+            for item in data.get('Results', [])[:num_results]:
+                results.append({
+                    'title': item.get('Text', ''),
+                    'url': item.get('FirstURL', ''),
+                    'snippet': item.get('Text', ''),
+                    'source': 'DuckDuckGo'
+                })
+
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] DuckDuckGo error: {e}")
+            print(f"    [DEBUG] DuckDuckGo exception: {e}")
+
     return results
 
 
-def search_yahoo(query, verbose=False, debug=False):
-    """Search Yahoo"""
+def search_dehashed_api(query, api_key, verbose=False, debug=False):
+    """Search Dehashed breach database (optional)"""
     results = []
+
+    if not api_key:
+        if debug:
+            print("    [DEBUG] Dehashed API not configured")
+        return results
+
     try:
-        url = f'https://search.yahoo.com/search?p={quote_plus(query)}&n=15'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
+        url = "https://api.dehashed.com/search"
+        params = {'query': f'phone:"{query}"'}
+        headers = {'Accept': 'application/json'}
+        auth = (api_key.split(':')[0], api_key.split(':')[1]) if ':' in api_key else (api_key, '')
+
+        response = requests.get(url, params=params, headers=headers, auth=auth, timeout=15)
 
         if debug:
-            print(f"    [DEBUG] Yahoo status: {response.status_code}")
+            print(f"    [DEBUG] Dehashed API status: {response.status_code}")
 
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all('div', class_=['dd', 'algo'])[:15]:
-                title_elem = item.find('h3') or item.find('a')
-                title = title_elem.get_text() if title_elem else ''
+        if response.status_code == 200:
+            data = response.json()
+            for entry in data.get('entries', [])[:10]:
+                name = f"{entry.get('name', '')} {entry.get('username', '')}".strip()
+                results.append({
+                    'title': name or 'Dehashed Entry',
+                    'url': entry.get('database_name', ''),
+                    'snippet': f"Email: {entry.get('email', 'N/A')} | Database: {entry.get('database_name', 'N/A')}",
+                    'source': 'Dehashed'
+                })
+                if verbose:
+                    print(f"      Found: {name[:60]}...")
+        elif response.status_code == 401:
+            print(f"    {color.warning('Dehashed API key invalid')}")
+        elif debug:
+            print(f"    [DEBUG] Dehashed error: {response.text[:100]}")
 
-                link_elem = item.find('a')
-                url_found = link_elem.get('href', '') if link_elem else ''
-
-                snippet_elem = item.find('p') or item.find('span', class_='fc-falcon')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Yahoo'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] Yahoo error: {e}")
+            print(f"    [DEBUG] Dehashed exception: {e}")
+
     return results
-
-
-def search_ask(query, verbose=False, debug=False):
-    """Search Ask.com"""
-    results = []
-    try:
-        url = f'https://www.ask.com/web?q={quote_plus(query)}'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
-
-        if debug:
-            print(f"    [DEBUG] Ask status: {response.status_code}")
-
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all('div', class_=['PartialSearchResults-item', 'result'])[:15]:
-                title_elem = item.find('a', class_='PartialSearchResults-item-title-link') or item.find('a')
-                title = title_elem.get_text() if title_elem else ''
-                url_found = title_elem.get('href', '') if title_elem else ''
-
-                snippet_elem = item.find('p', class_='PartialSearchResults-item-abstract') or item.find('p')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Ask'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
-    except Exception as e:
-        if debug:
-            print(f"    [DEBUG] Ask error: {e}")
-    return results
-
-
-def search_aol(query, verbose=False, debug=False):
-    """Search AOL"""
-    results = []
-    try:
-        url = f'https://search.aol.com/aol/search?q={quote_plus(query)}'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
-
-        if debug:
-            print(f"    [DEBUG] AOL status: {response.status_code}")
-
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all(['div', 'li'], class_=['dd', 'algo', 'ov-a'])[:15]:
-                title_elem = item.find('h3') or item.find('a')
-                title = title_elem.get_text() if title_elem else ''
-
-                link_elem = item.find('a')
-                url_found = link_elem.get('href', '') if link_elem else ''
-
-                snippet_elem = item.find('p')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'AOL'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
-    except Exception as e:
-        if debug:
-            print(f"    [DEBUG] AOL error: {e}")
-    return results
-
-
-def search_ecosia(query, verbose=False, debug=False):
-    """Search Ecosia"""
-    results = []
-    try:
-        url = f'https://www.ecosia.org/search?method=index&q={quote_plus(query)}'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
-
-        if debug:
-            print(f"    [DEBUG] Ecosia status: {response.status_code}")
-
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all('div', class_=['result', 'result__body'])[:15]:
-                title_elem = item.find('a', class_='result-title') or item.find('h2') or item.find('a')
-                title = title_elem.get_text() if title_elem else ''
-                url_found = title_elem.get('href', '') if title_elem else ''
-
-                snippet_elem = item.find('p', class_='result-snippet') or item.find('p')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Ecosia'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
-    except Exception as e:
-        if debug:
-            print(f"    [DEBUG] Ecosia error: {e}")
-    return results
-
-
-def search_startpage(query, verbose=False, debug=False):
-    """Search Startpage"""
-    results = []
-    try:
-        url = f'https://www.startpage.com/do/search?query={quote_plus(query)}'
-        headers = get_random_headers()
-        headers['Accept'] = 'text/html'
-        response = requests.get(url, headers=headers, timeout=15)
-
-        if debug:
-            print(f"    [DEBUG] Startpage status: {response.status_code}")
-
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all('div', class_=['w-gl__result', 'result'])[:15]:
-                title_elem = item.find('a', class_='w-gl__result-title') or item.find('h3') or item.find('a')
-                title = title_elem.get_text() if title_elem else ''
-                url_found = title_elem.get('href', '') if title_elem else ''
-
-                snippet_elem = item.find('p', class_='w-gl__description') or item.find('p')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Startpage'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
-    except Exception as e:
-        if debug:
-            print(f"    [DEBUG] Startpage error: {e}")
-    return results
-
-
-def search_qwant(query, verbose=False, debug=False):
-    """Search Qwant"""
-    results = []
-    try:
-        url = f'https://www.qwant.com/?q={quote_plus(query)}&t=web'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
-
-        if debug:
-            print(f"    [DEBUG] Qwant status: {response.status_code}")
-
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all(['div', 'article'], class_=['result', 'web-result'])[:15]:
-                title_elem = item.find('a') or item.find('h2')
-                title = title_elem.get_text() if title_elem else ''
-                url_found = title_elem.get('href', '') if title_elem else ''
-
-                snippet_elem = item.find('p') or item.find('span')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Qwant'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
-    except Exception as e:
-        if debug:
-            print(f"    [DEBUG] Qwant error: {e}")
-    return results
-
-
-def search_brave(query, verbose=False, debug=False):
-    """Search Brave"""
-    results = []
-    try:
-        url = f'https://search.brave.com/search?q={quote_plus(query)}'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
-
-        if debug:
-            print(f"    [DEBUG] Brave status: {response.status_code}")
-
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all('div', class_=['snippet', 'result'])[:15]:
-                title_elem = item.find('a', class_='result-header') or item.find('a') or item.find('h2')
-                title = title_elem.get_text() if title_elem else ''
-                url_found = title_elem.get('href', '') if title_elem else ''
-
-                snippet_elem = item.find('p', class_=['snippet-description']) or item.find('p')
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': 'Brave'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
-    except Exception as e:
-        if debug:
-            print(f"    [DEBUG] Brave error: {e}")
-    return results
-
-
-# Site-specific searches
-def search_site(query, site, verbose=False, debug=False):
-    """Search a specific site via Google"""
-    results = []
-    try:
-        site_query = f'site:{site} {query}'
-        url = f'https://www.google.com/search?q={quote_plus(site_query)}&num=10'
-        response = requests.get(url, headers=get_random_headers(), timeout=15)
-
-        if debug:
-            print(f"    [DEBUG] Site search ({site}) status: {response.status_code}")
-
-        if response.status_code == 200 and BS4_AVAILABLE:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for g in soup.find_all('div', class_='g')[:10]:
-                title_elem = g.find('h3')
-                title = title_elem.get_text() if title_elem else ''
-
-                link_elem = g.find('a')
-                url_found = link_elem.get('href', '') if link_elem else ''
-
-                snippet_elem = g.find('div', class_=['VwiC3b', 'yXK7lf'])
-                snippet = snippet_elem.get_text() if snippet_elem else ''
-
-                if title or snippet:
-                    results.append({
-                        'title': title,
-                        'snippet': snippet,
-                        'url': url_found,
-                        'source': f'Site:{site}'
-                    })
-                    if verbose:
-                        print(f"      Found: {title[:60]}...")
-    except Exception as e:
-        if debug:
-            print(f"    [DEBUG] Site search error: {e}")
-    return results
-
-
-# Ordered list of all 10 search engines
-SEARCH_ENGINES = [
-    ('Google', search_google),
-    ('Bing', search_bing),
-    ('DuckDuckGo', search_duckduckgo),
-    ('Yahoo', search_yahoo),
-    ('Ask', search_ask),
-    ('AOL', search_aol),
-    ('Ecosia', search_ecosia),
-    ('Startpage', search_startpage),
-    ('Qwant', search_qwant),
-    ('Brave', search_brave),
-]
-
-# People search sites
-PEOPLE_SEARCH_SITES = [
-    'truepeoplesearch.com',
-    'whitepages.com',
-    'spokeo.com',
-    'fastpeoplesearch.com',
-    'thatsthem.com',
-    'truecaller.com',
-    'beenverified.com',
-    'intelius.com',
-    'zabasearch.com',
-    'peoplefinder.com',
-]
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# EXTRACTION AND ANALYSIS
+# PATTERN EXTRACTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_names(text):
@@ -877,106 +512,62 @@ def extract_names(text):
         'Business', 'Service', 'Services', 'Company', 'Companies',
         'True People', 'White Pages', 'Fast People', 'People Search',
         'Phone Number', 'Reverse Phone', 'Phone Lookup', 'Cell Phone',
-        'Please Wait', 'Click Here', 'Read More', 'Learn More',
-        'Sign Up', 'Log In', 'Privacy Policy', 'Terms Service',
     }
 
-    filtered_names = []
-    for name in names:
-        if name not in excluded and len(name.split()) >= 2:
-            filtered_names.append(name)
-
-    return filtered_names
+    return [n for n in names if n not in excluded and len(n.split()) >= 2]
 
 
 def extract_locations(text):
     """Extract potential locations from text"""
     locations = []
 
+    # State abbreviations
     state_pattern = r'\b(' + '|'.join(US_STATES.keys()) + r')\b'
-    state_matches = re.findall(state_pattern, text)
-    locations.extend(state_matches)
+    locations.extend(re.findall(state_pattern, text))
 
+    # City, State combinations
     city_state_pattern = r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),?\s+(' + '|'.join(US_STATES.keys()) + r')\b'
-    city_state_matches = re.findall(city_state_pattern, text)
-    for city, state in city_state_matches:
+    for city, state in re.findall(city_state_pattern, text):
         locations.append(f"{city}, {state}")
 
+    # Full state names
     for abbr, full_name in US_STATES.items():
         if full_name in text:
             locations.append(full_name)
 
-    zip_pattern = r'\b\d{5}(?:-\d{4})?\b'
-    zip_matches = re.findall(zip_pattern, text)
-    locations.extend(zip_matches)
+    # Zip codes
+    locations.extend(re.findall(r'\b\d{5}(?:-\d{4})?\b', text))
 
     return list(set(locations))
 
 
-def extract_businesses(text):
-    """Extract potential business names from text and URLs"""
-    businesses = []
+def extract_usernames(text):
+    """Extract potential usernames from text and URLs"""
+    usernames = []
 
-    # Business indicators in text
-    biz_patterns = [
-        r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Inc|LLC|Corp|Co|Ltd|Company|Services|Solutions|Group))\b',
-        r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Restaurant|Hotel|Store|Shop|Market|Center|Centre))\b',
-    ]
+    # @username pattern
+    usernames.extend(re.findall(r'@([A-Za-z0-9_]{3,20})', text))
 
-    for pattern in biz_patterns:
-        matches = re.findall(pattern, text)
-        businesses.extend(matches)
+    # URL path usernames (e.g., facebook.com/username)
+    url_pattern = r'(?:facebook|twitter|instagram|linkedin)\.com/([A-Za-z0-9_.-]{3,30})'
+    usernames.extend(re.findall(url_pattern, text, re.IGNORECASE))
 
-    return list(set(businesses))
-
-
-def extract_emails(text):
-    """Extract email addresses from text"""
-    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    return list(set(re.findall(email_pattern, text)))
-
-
-def extract_urls_intel(text, url=''):
-    """Extract intelligence from URLs (domains often contain names/business info)"""
-    intel = []
-
-    # Extract domain parts that might be names
-    domain_pattern = r'https?://(?:www\.)?([a-zA-Z0-9-]+)\.'
-    domains = re.findall(domain_pattern, url + ' ' + text)
-
-    for domain in domains:
-        # Skip common domains
-        if domain.lower() not in ['google', 'bing', 'yahoo', 'facebook', 'twitter',
-                                   'instagram', 'linkedin', 'youtube', 'reddit',
-                                   'amazon', 'ebay', 'wikipedia', 'github']:
-            # Could be a business name
-            intel.append(domain)
-
-    return intel
+    excluded = {'search', 'profile', 'user', 'pages', 'groups', 'photos', 'videos'}
+    return list(set(u for u in usernames if u.lower() not in excluded))
 
 
 def analyze_results(all_results, verbose=False):
     """Analyze all results for patterns"""
     all_text = []
-    all_urls = []
     source_counts = Counter()
-    url_domains = Counter()
 
     for format_str, results in all_results.items():
         for result in results:
-            text = f"{result.get('title', '')} {result.get('snippet', '')}"
-            url = result.get('url', '')
+            text = f"{result.get('title', '')} {result.get('snippet', '')} {result.get('url', '')}"
             all_text.append(text)
-            all_urls.append(url)
             source_counts[result.get('source', 'Unknown')] += 1
 
-            # Track domains
-            domain_match = re.search(r'https?://(?:www\.)?([^/]+)', url)
-            if domain_match:
-                url_domains[domain_match.group(1)] += 1
-
     combined_text = ' '.join(all_text)
-    combined_urls = ' '.join(all_urls)
 
     names = extract_names(combined_text)
     name_counter = Counter(names)
@@ -984,148 +575,115 @@ def analyze_results(all_results, verbose=False):
     locations = extract_locations(combined_text)
     location_counter = Counter(locations)
 
-    businesses = extract_businesses(combined_text)
-    business_counter = Counter(businesses)
+    usernames = extract_usernames(combined_text)
+    username_counter = Counter(usernames)
 
-    emails = extract_emails(combined_text)
+    # Calculate confidence score
+    total = len(all_text)
+    name_consistency = len([n for n, c in name_counter.items() if c >= 2])
+    location_consistency = len([l for l, c in location_counter.items() if c >= 2])
 
-    url_intel = extract_urls_intel(combined_text, combined_urls)
-    url_intel_counter = Counter(url_intel)
+    if total >= 20 and name_consistency >= 2:
+        confidence = 'HIGH'
+        confidence_pct = min(100, 60 + name_consistency * 10 + location_consistency * 5)
+    elif total >= 10 or name_consistency >= 1:
+        confidence = 'MEDIUM'
+        confidence_pct = min(74, 40 + total + name_consistency * 5)
+    else:
+        confidence = 'LOW'
+        confidence_pct = min(39, total * 3)
 
     return {
-        'total_results': len(all_text),
+        'total_results': total,
+        'unique_urls': len(set(r.get('url', '') for results in all_results.values() for r in results)),
         'results_by_source': dict(source_counts),
-        'common_names': name_counter.most_common(15),
-        'common_locations': location_counter.most_common(10),
-        'common_businesses': business_counter.most_common(10),
-        'emails_found': emails,
-        'url_intel': url_intel_counter.most_common(10),
-        'top_domains': url_domains.most_common(10),
+        'names': name_counter.most_common(10),
+        'locations': location_counter.most_common(10),
+        'usernames': username_counter.most_common(10),
+        'confidence': confidence,
+        'confidence_pct': confidence_pct,
     }
-
-
-def generate_summary(all_results, patterns):
-    """Generate a weighted summary - more appearances = more detail"""
-    summary = {
-        'confidence': 'LOW',
-        'primary_name': None,
-        'primary_location': None,
-        'primary_business': None,
-        'duplicate_intel': [],
-    }
-
-    # Find items that appear more than once
-    for name, count in patterns['common_names']:
-        if count >= 2:
-            summary['duplicate_intel'].append(('NAME', name, count))
-            if not summary['primary_name']:
-                summary['primary_name'] = name
-
-    for location, count in patterns['common_locations']:
-        if count >= 2:
-            summary['duplicate_intel'].append(('LOCATION', location, count))
-            if not summary['primary_location']:
-                summary['primary_location'] = location
-
-    for business, count in patterns['common_businesses']:
-        if count >= 2:
-            summary['duplicate_intel'].append(('BUSINESS', business, count))
-            if not summary['primary_business']:
-                summary['primary_business'] = business
-
-    # Calculate confidence
-    duplicate_count = len(summary['duplicate_intel'])
-    if duplicate_count >= 5:
-        summary['confidence'] = 'HIGH'
-    elif duplicate_count >= 3:
-        summary['confidence'] = 'MEDIUM'
-    elif duplicate_count >= 1:
-        summary['confidence'] = 'LOW'
-    else:
-        summary['confidence'] = 'NONE'
-
-    return summary
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # OUTPUT FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def print_results(patterns, summary, phone_number, verbose=False):
+def print_results(patterns, phone_number, all_results, verbose=False):
     """Print formatted results"""
     print(f"\n{'='*70}")
-    print(color.header(f"TELESPOT ANALYSIS RESULTS"))
-    print(f"{'='*70}")
-    print(f"Phone: {phone_number}")
-    print(f"Total Results: {patterns['total_results']}")
-    print(f"Confidence: {summary['confidence']}")
+    print(color.header("PATTERN ANALYSIS SUMMARY"))
     print(f"{'='*70}\n")
+
+    # Confidence
+    conf_color = color.success if patterns['confidence'] == 'HIGH' else (
+        color.warning if patterns['confidence'] == 'MEDIUM' else color.error)
+    conf_text = f"{patterns['confidence']} ({patterns['confidence_pct']}%)"
+    print(f"Confidence Score: {conf_color(conf_text)}\n")
+
+    print(f"Total Results Found: {patterns['total_results']}")
+    print(f"Unique URLs: {patterns['unique_urls']}\n")
 
     # Source breakdown
     if patterns['results_by_source']:
         print(color.header("Results by Source:"))
         for source, count in sorted(patterns['results_by_source'].items(), key=lambda x: -x[1]):
-            print(f"  [{count:3d}] {source}")
+            print(f"  • {source}: {count} results")
         print()
 
-    # Primary findings
-    if summary['primary_name'] or summary['primary_location'] or summary['primary_business']:
-        print(color.header("Primary Findings:"))
-        if summary['primary_name']:
-            print(f"  Name: {summary['primary_name']}")
-        if summary['primary_location']:
-            print(f"  Location: {summary['primary_location']}")
-        if summary['primary_business']:
-            print(f"  Business: {summary['primary_business']}")
+    # Names
+    if patterns['names']:
+        print(color.header("Names Found:"))
+        for name, count in patterns['names']:
+            indicator = " ⭐" if count >= 2 else ""
+            print(f"  • {name}: mentioned {count} time(s){indicator}")
         print()
 
-    # Names found
-    if patterns['common_names']:
-        print(color.header("Names Detected:"))
-        for name, count in patterns['common_names'][:10]:
-            indicator = " **" if count >= 2 else ""
-            print(f"  [{count}x] {name}{indicator}")
+    # Locations
+    if patterns['locations']:
+        print(color.header("Locations Mentioned:"))
+        for location, count in patterns['locations']:
+            indicator = " ⭐" if count >= 2 else ""
+            print(f"  • {location}: {count} occurrence(s){indicator}")
         print()
 
-    # Locations found
-    if patterns['common_locations']:
-        print(color.header("Locations Detected:"))
-        for location, count in patterns['common_locations'][:10]:
-            indicator = " **" if count >= 2 else ""
-            print(f"  [{count}x] {location}{indicator}")
+    # Usernames
+    if patterns['usernames']:
+        print(color.header("Usernames Found:"))
+        for username, count in patterns['usernames']:
+            indicator = " ⭐" if count >= 2 else ""
+            print(f"  • @{username}: {count} occurrence(s){indicator}")
         print()
 
-    # Businesses found
-    if patterns['common_businesses']:
-        print(color.header("Businesses Detected:"))
-        for business, count in patterns['common_businesses'][:10]:
-            print(f"  [{count}x] {business}")
-        print()
+    # Key insights
+    print(color.header("Key Insights:"))
+    if patterns['names']:
+        print(f"  • Most associated name: {color.success(patterns['names'][0][0])}")
+    if patterns['locations']:
+        print(f"  • Most associated location: {color.success(patterns['locations'][0][0])}")
+    if not patterns['names'] and not patterns['locations']:
+        print(f"  • {color.warning('No clear patterns found in results')}")
 
-    # Emails found
-    if patterns['emails_found']:
-        print(color.header("Emails Found:"))
-        for email in patterns['emails_found'][:5]:
-            print(f"  {email}")
-        print()
+    print(f"\n{'='*70}\n")
 
-    # URL intelligence
-    if patterns['url_intel'] and verbose:
-        print(color.header("URL Intelligence:"))
-        for intel, count in patterns['url_intel'][:10]:
-            print(f"  [{count}x] {intel}")
-        print()
+    # Verbose: show all listings
+    if verbose and all_results:
+        print(color.header("VERBOSE RESULTS - ALL LISTINGS"))
+        print(f"{'='*70}\n")
 
-    # Duplicate summary (items appearing 2+ times)
-    if summary['duplicate_intel']:
-        print(color.header("High-Confidence Intel (2+ appearances):"))
-        for intel_type, value, count in sorted(summary['duplicate_intel'], key=lambda x: -x[2]):
-            print(f"  [{intel_type}] {value} (appeared {count}x)")
-        print()
-
-    print(f"{'='*70}\n")
+        for fmt, results in all_results.items():
+            if results:
+                print(f"Format: {fmt}")
+                print("-" * 70)
+                for i, r in enumerate(results, 1):
+                    print(f"\n[{i}] {r.get('title', 'N/A')}")
+                    print(f"    URL: {r.get('url', 'N/A')}")
+                    print(f"    Source: {r.get('source', 'N/A')}")
+                    if r.get('snippet'):
+                        print(f"    Description: {r.get('snippet', '')[:200]}...")
+                print()
 
 
-def save_json_results(phone_number, formats, all_results, patterns, summary, filename=None):
+def save_json_results(phone_number, formats, all_results, patterns, filename=None):
     """Save results to JSON file"""
     if not filename:
         clean_phone = re.sub(r'\D', '', phone_number)
@@ -1137,66 +695,153 @@ def save_json_results(phone_number, formats, all_results, patterns, summary, fil
         'timestamp': datetime.now().isoformat(),
         'phone_number': phone_number,
         'search_formats': formats,
-        'results': {},
-        'patterns': {
-            'total_results': patterns['total_results'],
-            'results_by_source': patterns['results_by_source'],
-            'names': [{'name': n, 'count': c} for n, c in patterns['common_names']],
-            'locations': [{'location': l, 'count': c} for l, c in patterns['common_locations']],
-            'businesses': [{'business': b, 'count': c} for b, c in patterns['common_businesses']],
-            'emails': patterns['emails_found'],
-        },
-        'summary': {
-            'confidence': summary['confidence'],
-            'primary_name': summary['primary_name'],
-            'primary_location': summary['primary_location'],
-            'primary_business': summary['primary_business'],
-            'high_confidence_intel': [
-                {'type': t, 'value': v, 'count': c}
-                for t, v, c in summary['duplicate_intel']
-            ],
-        },
+        'patterns': patterns,
+        'results': {fmt: results for fmt, results in all_results.items()},
     }
-
-    # Add results (with some cleanup for JSON)
-    for fmt, results in all_results.items():
-        output['results'][fmt] = results
 
     with open(filename, 'w') as f:
         json.dump(output, f, indent=2)
 
     return filename
 
+
+def save_txt_results(phone_number, formats, all_results, patterns, filename=None):
+    """Save results to TXT file"""
+    if not filename:
+        clean_phone = re.sub(r'\D', '', phone_number)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"telespot_{clean_phone}_{timestamp}.txt"
+
+    with open(filename, 'w') as f:
+        f.write("=" * 70 + "\n")
+        f.write("TELESPOT SEARCH RESULTS\n")
+        f.write("=" * 70 + "\n\n")
+        f.write(f"Phone Number: {phone_number}\n")
+        f.write(f"Search Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Confidence Score: {patterns['confidence']} ({patterns['confidence_pct']}%)\n\n")
+
+        f.write("=" * 70 + "\n")
+        f.write("SUMMARY\n")
+        f.write("=" * 70 + "\n\n")
+
+        f.write(f"Total Results: {patterns['total_results']}\n")
+        f.write(f"Unique URLs: {patterns['unique_urls']}\n\n")
+
+        f.write("Results by Source:\n")
+        for source, count in patterns['results_by_source'].items():
+            f.write(f"  - {source}: {count} results\n")
+        f.write("\n")
+
+        if patterns['names']:
+            f.write("Names Found:\n")
+            for name, count in patterns['names']:
+                f.write(f"  - {name}: {count} mention(s)\n")
+            f.write("\n")
+
+        if patterns['locations']:
+            f.write("Locations Mentioned:\n")
+            for loc, count in patterns['locations']:
+                f.write(f"  - {loc}: {count} occurrence(s)\n")
+            f.write("\n")
+
+        if patterns['usernames']:
+            f.write("Usernames Found:\n")
+            for user, count in patterns['usernames']:
+                f.write(f"  - @{user}: {count} occurrence(s)\n")
+            f.write("\n")
+
+        f.write("=" * 70 + "\n")
+        f.write("DETAILED RESULTS\n")
+        f.write("=" * 70 + "\n\n")
+
+        for fmt, results in all_results.items():
+            if results:
+                f.write(f"Format: {fmt}\n")
+                f.write("-" * 70 + "\n\n")
+                for i, r in enumerate(results, 1):
+                    f.write(f"[{i}] {r.get('title', 'N/A')}\n")
+                    f.write(f"URL: {r.get('url', 'N/A')}\n")
+                    f.write(f"Source: {r.get('source', 'N/A')}\n")
+                    if r.get('snippet'):
+                        f.write(f"Description: {r.get('snippet', '')}\n")
+                    f.write("\n")
+
+    return filename
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# API FUNCTIONS
+# INTERACTIVE SETUP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def query_numverify(phone_number, api_key):
-    """Query NumVerify API for phone validation"""
-    if not api_key:
-        return None
-    try:
-        url = f"http://apilayer.net/api/validate?access_key={api_key}&number={phone_number}"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    return None
+def interactive_setup():
+    """Interactive API key setup"""
+    print(color.header("\n" + "=" * 60))
+    print(color.header("TELESPOT API CONFIGURATION"))
+    print(color.header("=" * 60))
+    print("\nThis will configure your API keys for searching.")
+    print("Press Enter to skip any API you don't want to configure.\n")
 
+    # Google
+    print(color.info("Google Custom Search API"))
+    print("  Get keys at: https://console.cloud.google.com/")
+    print("  1. Enable 'Custom Search API'")
+    print("  2. Create credentials (API Key)")
+    print("  3. Create a Custom Search Engine at https://cse.google.com/")
 
-def query_abstract_api(phone_number, api_key):
-    """Query Abstract API for phone validation"""
-    if not api_key:
-        return None
-    try:
-        url = f"https://phonevalidation.abstractapi.com/v1/?api_key={api_key}&phone={phone_number}"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    return None
+    current_key = config.get('google_api_key', '')
+    masked = f"[{current_key[:8]}...]" if len(current_key) > 8 else "[not set]"
+    print(f"\n  Current API Key: {masked}")
+    key = input("  Enter Google API Key (or Enter to skip): ").strip()
+    if key:
+        config.set('google_api_key', key)
+
+    current_cse = config.get('google_cse_id', '')
+    masked = f"[{current_cse[:8]}...]" if len(current_cse) > 8 else "[not set]"
+    print(f"  Current CSE ID: {masked}")
+    cse = input("  Enter Google CSE ID (or Enter to skip): ").strip()
+    if cse:
+        config.set('google_cse_id', cse)
+
+    # Bing
+    print(color.info("\nBing Search API (Azure Cognitive Services)"))
+    print("  Get key at: https://portal.azure.com/")
+    print("  1. Create 'Bing Search v7' resource")
+    print("  2. Copy the API key")
+
+    current_bing = config.get('bing_api_key', '')
+    masked = f"[{current_bing[:8]}...]" if len(current_bing) > 8 else "[not set]"
+    print(f"\n  Current Bing Key: {masked}")
+    bing = input("  Enter Bing API Key (or Enter to skip): ").strip()
+    if bing:
+        config.set('bing_api_key', bing)
+
+    # Dehashed
+    print(color.info("\nDehashed API (optional - for breach database search)"))
+    print("  Get key at: https://www.dehashed.com/")
+    print("  Format: email:api_key")
+
+    current_dh = config.get('dehashed_api_key', '')
+    masked = f"[{current_dh[:8]}...]" if len(current_dh) > 8 else "[not set]"
+    print(f"\n  Current Dehashed Key: {masked}")
+    dh = input("  Enter Dehashed API Key (or Enter to skip): ").strip()
+    if dh:
+        config.set('dehashed_api_key', dh)
+
+    # Country code
+    print(color.info("\nDefault Country Code"))
+    print(f"  Current: {config.get('default_country_code', '+1')}")
+    cc = input("  Enter country code (e.g., +1, +44) or Enter to keep: ").strip()
+    if cc:
+        if not cc.startswith('+'):
+            cc = '+' + cc
+        config.set('default_country_code', cc)
+
+    # Save
+    if config.save():
+        print(color.success("\nConfiguration saved successfully!"))
+    else:
+        print(color.error("\nFailed to save configuration."))
+
+    config.display_api_status()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # UPDATE FUNCTION
@@ -1207,20 +852,10 @@ def update_from_repo():
     print(color.header("\nUpdating telespot from repository..."))
 
     try:
-        # Check if git is available
-        result = subprocess.run(['git', '--version'], capture_output=True, text=True)
-        if result.returncode != 0:
-            print("Git not found. Please install git or download manually from:")
-            print(f"  {REPO_URL}")
-            return False
-
-        # Check if we're in a git repo
         script_dir = os.path.dirname(os.path.abspath(__file__))
         git_dir = os.path.join(script_dir, '.git')
 
         if os.path.exists(git_dir):
-            # Pull latest changes
-            print("Pulling latest changes...")
             result = subprocess.run(
                 ['git', 'pull', 'origin', 'main'],
                 cwd=script_dir,
@@ -1235,7 +870,6 @@ def update_from_repo():
                 print(f"Update failed: {result.stderr}")
                 return False
         else:
-            # Not a git repo, try to clone
             print("Not a git repository. Please run:")
             print(f"  git clone {REPO_URL}")
             return False
@@ -1243,57 +877,6 @@ def update_from_repo():
     except Exception as e:
         print(f"Update error: {e}")
         return False
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# INTERACTIVE SETUP
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def interactive_api_setup():
-    """Interactive setup for API keys"""
-    print(color.header("\n" + "="*60))
-    print(color.header("TELESPOT API CONFIGURATION"))
-    print(color.header("="*60))
-    print("\nThis will help you configure API keys for enhanced lookups.")
-    print("Press Enter to skip any API you don't want to configure.\n")
-
-    apis = [
-        ('numverify_api_key', 'NumVerify', 'Phone validation (free tier available)'),
-        ('abstract_api_key', 'AbstractAPI', 'Phone validation (free tier available)'),
-        ('twilio_account_sid', 'Twilio Account SID', 'Caller ID lookup'),
-        ('twilio_auth_token', 'Twilio Auth Token', 'Twilio authentication'),
-        ('opencnam_account_sid', 'OpenCNAM Account SID', 'Caller ID name lookup'),
-        ('opencnam_auth_token', 'OpenCNAM Auth Token', 'OpenCNAM authentication'),
-        ('telnyx_api_key', 'Telnyx', 'Phone number intelligence'),
-    ]
-
-    for key, name, description in apis:
-        current = config.get(key, '')
-        masked = f"[{current[:4]}...{current[-4:]}]" if len(current) > 8 else "[not set]"
-
-        print(f"\n{name} - {description}")
-        print(f"  Current: {masked}")
-        value = input(f"  Enter new value (or Enter to keep): ").strip()
-
-        if value:
-            config.set(key, value)
-
-    # Country code setting
-    print(f"\nDefault Country Code")
-    print(f"  Current: {config.get('default_country_code', '+1')}")
-    print("  Common codes: +1 (USA/Canada), +44 (UK), +49 (Germany), +33 (France)")
-    cc = input("  Enter country code (or Enter to keep): ").strip()
-    if cc:
-        if not cc.startswith('+'):
-            cc = '+' + cc
-        config.set('default_country_code', cc)
-
-    # Save configuration
-    if config.save():
-        print(color.success("\nConfiguration saved successfully!"))
-    else:
-        print(color.error("\nFailed to save configuration."))
-
-    config.display_api_status()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN SEARCH FUNCTION
@@ -1309,33 +892,35 @@ def run_search(phone_number, args):
     elif args.colorful:
         color = ColorMode('colorful')
     else:
-        color = ColorMode('mono')
+        color = ColorMode('normal')
 
     # Get country code
     country_code = args.country or config.get('default_country_code', '+1')
 
-    # Generate search formats
+    # Generate formats
     formats = generate_phone_formats(phone_number, country_code)
     if not formats:
-        print(color.error("Invalid phone number format. Please check and try again."))
+        print(color.error("Invalid phone number format. Please enter a valid 10-digit number."))
         return None
 
-    print(f"\nPhone Number: {phone_number}")
-    print(f"Country Code: {country_code}")
-    print(f"Search Formats: {len(formats)}")
-    if args.verbose:
-        for fmt in formats:
-            print(f"  - {fmt}")
-    print()
+    print(f"\nSearching for: {color.header(phone_number)}")
+    print(f"Country code: {country_code}")
+    print(f"Using {len(formats)} format variations\n")
 
     # Show API status
-    if args.verbose:
-        config.display_api_status()
+    config.display_api_status()
 
     # DTMF display
     if args.dtmf:
         dtmf = get_dtmf_representation(phone_number)
-        print(f"DTMF Representation: {dtmf}\n")
+        print(f"DTMF: {dtmf}\n")
+
+    # Get API keys
+    google_key = config.get('google_api_key', '')
+    google_cse = config.get('google_cse_id', '')
+    bing_key = config.get('bing_api_key', '')
+    dehashed_key = config.get('dehashed_api_key', '')
+    delay = int(config.get('delay_seconds', '2'))
 
     all_results = {}
     total_found = 0
@@ -1343,90 +928,101 @@ def run_search(phone_number, args):
     # Keyword addition
     keyword_suffix = f" {args.keyword}" if args.keyword else ""
 
-    # Run searches
-    for fmt in formats:
-        query = fmt + keyword_suffix
-        print(color.header(f"Searching: {query}"))
+    # Site restriction
+    site_prefix = f"site:{args.site} " if args.site else ""
+
+    for i, fmt in enumerate(formats, 1):
+        query = f"{site_prefix}{fmt}{keyword_suffix}"
+        print(f"{color.header(f'[{i}/{len(formats)}]')} Searching: {fmt}")
+
         format_results = []
 
-        # Search specific site if requested
-        if args.site:
-            print(f"  -> Site: {args.site}")
-            site_results = search_site(query, args.site, args.verbose, args.debug)
-            format_results.extend(site_results)
-            print(f"     Found: {len(site_results)} results")
-            delay = rate_limit()
-            if args.verbose:
-                print(f"     Rate limit: {delay:.1f}s")
-        else:
-            # Search all 10 engines
-            for engine_name, search_func in SEARCH_ENGINES:
-                print(f"  -> {engine_name}...", end=' ', flush=True)
-                results = search_func(query, args.verbose, args.debug)
-                format_results.extend(results)
-                print(f"({len(results)})")
+        # Google API
+        if google_key and google_cse:
+            print(f"  → Google API...", end=' ', flush=True)
+            results = search_google_api(query, google_key, google_cse, 10, args.verbose, args.debug)
+            format_results.extend(results)
+            print(f"({len(results)} results)")
+            time.sleep(1)
 
-                delay = rate_limit()
-                if args.verbose:
-                    print(f"     Rate limit: {delay:.1f}s")
+        # Bing API
+        if bing_key:
+            print(f"  → Bing API...", end=' ', flush=True)
+            results = search_bing_api(query, bing_key, 10, args.verbose, args.debug)
+            format_results.extend(results)
+            print(f"({len(results)} results)")
+            time.sleep(1)
 
-        # Also search people search sites
-        if not args.site:
-            for site in PEOPLE_SEARCH_SITES[:3]:  # Top 3 people search sites
-                print(f"  -> site:{site}...", end=' ', flush=True)
-                site_results = search_site(query, site, args.verbose, args.debug)
-                format_results.extend(site_results)
-                print(f"({len(site_results)})")
-                delay = rate_limit()
+        # DuckDuckGo (always available)
+        print(f"  → DuckDuckGo...", end=' ', flush=True)
+        results = search_duckduckgo_api(query, 10, args.verbose, args.debug)
+        format_results.extend(results)
+        print(f"({len(results)} results)")
+
+        # Dehashed (optional)
+        if dehashed_key and args.dehashed:
+            print(f"  → Dehashed...", end=' ', flush=True)
+            clean_query = re.sub(r'\D', '', fmt)
+            results = search_dehashed_api(clean_query, dehashed_key, args.verbose, args.debug)
+            format_results.extend(results)
+            print(f"({len(results)} results)")
 
         all_results[fmt] = format_results
         total_found += len(format_results)
-        print(f"  Total for format: {len(format_results)}\n")
 
-    print(color.header(f"\nTotal Results Collected: {total_found}"))
+        print(f"  {color.success(f'✓ {len(format_results)} total for this format')}")
 
-    # Analyze results
-    print("\nAnalyzing patterns...")
+        # Rate limiting
+        if i < len(formats):
+            print(f"  {color.warning(f'⏳ Waiting {delay} seconds...')}\n")
+            time.sleep(delay)
+        else:
+            print()
+
+    print(f"\n{color.header(f'Total Results: {total_found}')}\n")
+
+    # Analyze
+    print("Analyzing patterns...")
     patterns = analyze_results(all_results, args.verbose)
-    summary = generate_summary(all_results, patterns)
 
     # Print results
-    print_results(patterns, summary, phone_number, args.verbose)
+    print_results(patterns, phone_number, all_results, args.verbose)
 
-    # Print summary comparison if requested
+    # Summary comparison
     if args.summary:
-        print(color.header("\n" + "="*70))
         print(color.header("SUMMARY COMPARISON"))
-        print("="*70)
+        print("=" * 70)
+        print("\nItems appearing in multiple results (higher confidence):\n")
 
-        if summary['duplicate_intel']:
-            print("\nItems appearing multiple times (higher confidence):\n")
-
-            # Sort by count descending
-            sorted_intel = sorted(summary['duplicate_intel'], key=lambda x: -x[2])
-
-            for intel_type, value, count in sorted_intel:
-                # More appearances = more detail
+        for name, count in patterns['names']:
+            if count >= 2:
                 bar = "█" * min(count, 20)
-                spaces = " " * (20 - min(count, 20))
-                print(f"  {intel_type:10} | {bar}{spaces} | {value} ({count}x)")
+                print(f"  NAME     | {bar} | {name} ({count}x)")
 
-            print()
-        else:
-            print("\nNo items appeared multiple times.")
-            print("Try searching with different formats or keywords.\n")
+        for loc, count in patterns['locations']:
+            if count >= 2:
+                bar = "█" * min(count, 20)
+                print(f"  LOCATION | {bar} | {loc} ({count}x)")
 
-    # Save to JSON if requested
+        for user, count in patterns['usernames']:
+            if count >= 2:
+                bar = "█" * min(count, 20)
+                print(f"  USERNAME | {bar} | @{user} ({count}x)")
+        print()
+
+    # Save to file
     if args.output:
-        filename = save_json_results(phone_number, formats, all_results, patterns, summary, args.output)
-        print(color.success(f"\nResults saved to: {filename}"))
+        if args.output.endswith('.json'):
+            filename = save_json_results(phone_number, formats, all_results, patterns, args.output)
+        else:
+            filename = save_txt_results(phone_number, formats, all_results, patterns, args.output)
+        print(color.success(f"Results saved to: {filename}"))
 
     return {
         'phone_number': phone_number,
         'formats': formats,
         'results': all_results,
         'patterns': patterns,
-        'summary': summary,
     }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1434,94 +1030,69 @@ def run_search(phone_number, args):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def create_parser():
-    """Create argument parser with all options"""
+    """Create argument parser"""
     parser = argparse.ArgumentParser(
         prog='telespot',
         description=f'''
 ╔══════════════════════════════════════════════════════════════════╗
-║  telespot v{VERSION} - Multi-Engine Phone Number OSINT Tool       ║
+║  telespot v{VERSION} - Phone Number OSINT Tool                     ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  Searches 10 search engines + people search sites for phone     ║
-║  number intelligence including names, locations, and business   ║
-║  associations.                                                   ║
+║  API-based search across Google, Bing, and DuckDuckGo with      ║
+║  pattern recognition for names, locations, and usernames.        ║
 ╚══════════════════════════════════════════════════════════════════╝
 ''',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 EXAMPLES:
-  telespot 2155551234                    Basic search (US number)
-  telespot +442071234567 -c +44          UK number search
-  telespot 2155551234 -k "pizza"         Search with keyword
+  telespot 2155551234                    Basic search
+  telespot 2155551234 -k "John Smith"    Search with keywords
   telespot 2155551234 -s whitepages.com  Search specific site
-  telespot 2155551234 -v -o results.json Verbose with JSON output
-  telespot 2155551234 --summary          Show comparison summary
+  telespot 2155551234 --dehashed         Include breach database
+  telespot 2155551234 -v -o results.json Verbose + JSON output
   telespot --setup                       Configure API keys
-  telespot --update                      Update from repository
 
 API SETUP:
-  Run 'telespot --setup' to configure API keys for enhanced lookups.
-  Supported APIs: NumVerify, AbstractAPI, Twilio, OpenCNAM, Telnyx
+  Run 'telespot --setup' to configure your API keys.
+  At minimum, configure Google or Bing for best results.
+  DuckDuckGo works without an API key.
 
-SEARCH ENGINES (in order):
-  1. Google      2. Bing        3. DuckDuckGo   4. Yahoo
-  5. Ask         6. AOL         7. Ecosia       8. Startpage
-  9. Qwant      10. Brave
-
-PEOPLE SEARCH SITES:
-  truepeoplesearch.com, whitepages.com, spokeo.com, fastpeoplesearch.com,
-  thatsthem.com, truecaller.com, beenverified.com, and more
+SEARCH ENGINES:
+  • Google Custom Search API (requires API key + CSE ID)
+  • Bing Search API (requires Azure API key)
+  • DuckDuckGo Instant Answer API (no key required)
+  • Dehashed (optional, requires API key)
 
 For more information: https://github.com/thumpersecure/Telespot
 ''')
 
-    # Positional argument
     parser.add_argument('phone', nargs='?', help='Phone number to search')
 
-    # Search options
-    search_group = parser.add_argument_group('Search Options')
-    search_group.add_argument('-k', '--keyword', metavar='WORD',
-                              help='Add keyword to search (e.g., "pizza", "owner")')
-    search_group.add_argument('-s', '--site', metavar='DOMAIN',
-                              help='Search specific site (e.g., whitepages.com)')
-    search_group.add_argument('-c', '--country', metavar='CODE',
-                              help='Country code (default: +1 for US)')
+    search = parser.add_argument_group('Search Options')
+    search.add_argument('-k', '--keyword', metavar='WORD', help='Add keyword to search')
+    search.add_argument('-s', '--site', metavar='DOMAIN', help='Limit search to specific site')
+    search.add_argument('-c', '--country', metavar='CODE', help='Country code (default: +1)')
+    search.add_argument('--dehashed', action='store_true', help='Include Dehashed breach search')
 
-    # Output options
-    output_group = parser.add_argument_group('Output Options')
-    output_group.add_argument('-o', '--output', metavar='FILE',
-                              help='Save results to JSON file')
-    output_group.add_argument('-v', '--verbose', action='store_true',
-                              help='Show verbose output with all findings')
-    output_group.add_argument('--summary', action='store_true',
-                              help='Show comparison summary of duplicate results')
-    output_group.add_argument('--dtmf', action='store_true',
-                              help='Show DTMF tone representation')
+    output = parser.add_argument_group('Output Options')
+    output.add_argument('-o', '--output', metavar='FILE', help='Save results to file (.json or .txt)')
+    output.add_argument('-v', '--verbose', action='store_true', help='Show detailed listings')
+    output.add_argument('--summary', action='store_true', help='Show comparison summary')
+    output.add_argument('--dtmf', action='store_true', help='Show DTMF representation')
 
-    # Display options
-    display_group = parser.add_argument_group('Display Options')
-    display_group.add_argument('--colorful', action='store_true',
-                               help='Enable rainbow color mode')
-    display_group.add_argument('--no-color', action='store_true',
-                               help='Disable all colors')
+    display = parser.add_argument_group('Display Options')
+    display.add_argument('--colorful', action='store_true', help='Enable rainbow colors')
+    display.add_argument('--no-color', action='store_true', help='Disable colors')
 
-    # Configuration options
-    config_group = parser.add_argument_group('Configuration')
-    config_group.add_argument('--setup', action='store_true',
-                              help='Interactive API key setup')
-    config_group.add_argument('--api-status', action='store_true',
-                              help='Show API configuration status')
+    config_grp = parser.add_argument_group('Configuration')
+    config_grp.add_argument('--setup', action='store_true', help='Configure API keys')
+    config_grp.add_argument('--api-status', action='store_true', help='Show API status')
 
-    # Maintenance options
-    maint_group = parser.add_argument_group('Maintenance')
-    maint_group.add_argument('--update', action='store_true',
-                             help='Update telespot from repository')
-    maint_group.add_argument('--version', action='version',
-                             version=f'telespot v{VERSION}')
+    maint = parser.add_argument_group('Maintenance')
+    maint.add_argument('--update', action='store_true', help='Update from repository')
+    maint.add_argument('--version', action='version', version=f'telespot v{VERSION}')
 
-    # Debug options
-    debug_group = parser.add_argument_group('Debug')
-    debug_group.add_argument('-d', '--debug', action='store_true',
-                             help='Enable debug mode for troubleshooting')
+    debug = parser.add_argument_group('Debug')
+    debug.add_argument('-d', '--debug', action='store_true', help='Enable debug output')
 
     return parser
 
@@ -1536,29 +1107,23 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
 
-    # Set initial color mode
+    # Set color mode
     if args.no_color:
         color = ColorMode('off')
     elif args.colorful:
         color = ColorMode('colorful')
     else:
-        color = ColorMode('mono')
+        color = ColorMode('normal')
 
-    # Print logo (always with colors unless --no-color)
+    # Print logo
     if not args.no_color:
         print(get_ascii_logo())
     else:
         print(get_ascii_logo_mono())
 
-    # Check for BS4
-    if not BS4_AVAILABLE:
-        print(color.warning("Warning: beautifulsoup4 not installed. Install with:"))
-        print("  pip install beautifulsoup4 lxml")
-        print()
-
-    # Handle special commands
+    # Handle commands
     if args.setup:
-        interactive_api_setup()
+        interactive_setup()
         return 0
 
     if args.api_status:
@@ -1577,14 +1142,13 @@ def main():
         print("Enter phone number to search.")
         print(f"Default country code: {config.get('default_country_code', '+1')}")
 
-        # Prompt for international
         use_intl = input("\nUse international number? (y/N): ").strip().lower()
         if use_intl == 'y':
             print("\nCommon country codes:")
-            for code, country in list(COUNTRY_CODES.items())[:10]:
+            for code, country in list(COUNTRY_CODES.items())[:6]:
                 print(f"  {code}: {country}")
-            args.country = input("\nEnter country code (e.g., +44): ").strip()
-            if not args.country.startswith('+'):
+            args.country = input("\nEnter country code: ").strip()
+            if args.country and not args.country.startswith('+'):
                 args.country = '+' + args.country
 
         phone_number = input("\nPhone number: ").strip()
@@ -1598,19 +1162,21 @@ def main():
     try:
         result = run_search(phone_number, args)
 
-        if result:
-            # Prompt to save if not already saving
-            if not args.output:
-                save = input("\nSave results to JSON? (y/N): ").strip().lower()
-                if save == 'y':
+        if result and not args.output:
+            save = input("\nSave results to file? (y/N): ").strip().lower()
+            if save == 'y':
+                fmt = input("Format (txt/json) [txt]: ").strip().lower() or 'txt'
+                if fmt == 'json':
                     filename = save_json_results(
-                        phone_number,
-                        result['formats'],
-                        result['results'],
-                        result['patterns'],
-                        result['summary']
+                        phone_number, result['formats'],
+                        result['results'], result['patterns']
                     )
-                    print(color.success(f"Results saved to: {filename}"))
+                else:
+                    filename = save_txt_results(
+                        phone_number, result['formats'],
+                        result['results'], result['patterns']
+                    )
+                print(color.success(f"Results saved to: {filename}"))
 
         return 0
 
