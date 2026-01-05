@@ -1,0 +1,56 @@
+# telespot Configuration File
+# Version 5.0-beta
+#
+# This file stores API keys and settings for telespot.
+# You can edit this file directly or use 'telespot --setup' for interactive configuration.
+#
+# SECURITY NOTE: Keep this file secure. Do not share or commit API keys to public repositories.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# API KEYS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# NumVerify - Phone validation API (free tier: 100 requests/month)
+# Get your key at: https://numverify.com/
+numverify_api_key=
+
+# AbstractAPI - Phone validation API (free tier: 250 requests/month)
+# Get your key at: https://www.abstractapi.com/phone-validation-api
+abstract_api_key=
+
+# Twilio - Caller ID lookup (paid, ~$0.005/lookup)
+# Get credentials at: https://www.twilio.com/console
+twilio_account_sid=
+twilio_auth_token=
+
+# OpenCNAM - Caller ID name lookup (paid, ~$0.004/lookup)
+# Get credentials at: https://www.opencnam.com/
+opencnam_account_sid=
+opencnam_auth_token=
+
+# Telnyx - Phone number intelligence (paid)
+# Get your key at: https://portal.telnyx.com/
+telnyx_api_key=
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SETTINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Default country code for phone numbers
+# Common codes: +1 (USA/Canada), +44 (UK), +49 (Germany), +33 (France)
+default_country_code=+1
+
+# Rate limiting (seconds between requests)
+# Recommended: 3-5 seconds to avoid being blocked
+rate_limit_min=3
+rate_limit_max=5
+
+# Default output format: text or json
+default_output_format=text
+
+# Enable verbose output by default: true or false
+verbose=false
+
+# Enable colorful (rainbow) mode by default: true or false
+# false = monotone grayscale, true = rainbow colors
+colorful_mode=false

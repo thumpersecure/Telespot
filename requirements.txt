@@ -1,12 +1,22 @@
-# TeleSpot Requirements
-# Phone number OSINT search tool - API-Based Version v3.0
+# telespot Requirements
+# Multi-Engine Phone Number OSINT Tool - v5.0-beta
+#
+# Install with: pip install -r requirements.txt
 
-# HTTP requests for API calls
-requests>=2.31.0
-
-#therequirements
-
-
+# Core dependencies
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
+
+# Optional: For faster HTML parsing
+html5lib>=1.1
+
+# Note: The following are optional API-specific dependencies
+# Uncomment if you plan to use these APIs:
+
+# For Twilio integration
+# twilio>=8.0.0
+
+# For async operations (future enhancement)
+# aiohttp>=3.9.0
+# asyncio>=3.4.3
