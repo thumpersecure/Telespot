@@ -21,7 +21,7 @@ git clone https://github.com/thumpersecure/Telespot.git
 cd Telespot
 pip install -r requirements.txt
 ./telespot.py --setup
-./telespot.py 8565705151
+./telespot.py 8885551212
 ```
 
 ## Features
@@ -34,11 +34,11 @@ pip install -r requirements.txt
 
 ## TelespotX (Fast Mode)
 
-For maximum speed, use `telespotx.py` - parallel requests, no rate limiting:
+For maximum speed, use `telespotx.py` - parallel requests, no rate limiting, US numbers only:
 
 ```bash
 pip install httpx
-./telespotx.py 8565705151        # ~5 seconds vs ~60 seconds
+./telespotx.py 8885551212        # ~5 seconds vs ~60 seconds
 ```
 
 | | telespot.py | telespotx.py |
@@ -46,18 +46,19 @@ pip install httpx
 | Speed | ~60s | ~5s |
 | Rate limiting | Yes | No |
 | Formats | 10 | 6 |
+| Region | International | US only |
 | Library | requests | httpx |
 
 ## Usage
 
 ```bash
-./telespot.py 8565705151              # Basic search
-./telespot.py 8565705151 -v           # Verbose output
-./telespot.py 8565705151 --colorful   # Rainbow mode
-./telespot.py 8565705151 -k "name"    # Add keyword
-./telespot.py 8565705151 -s site.com  # Specific site
-./telespot.py 8565705151 --dehashed   # Include breach data
-./telespot.py 8565705151 -o out.json  # Save to JSON
+./telespot.py 8885551212              # Basic search
+./telespot.py 8885551212 -v           # Verbose output
+./telespot.py 8885551212 --colorful   # Rainbow mode
+./telespot.py 8885551212 -k "name"    # Add keyword
+./telespot.py 8885551212 -s site.com  # Specific site
+./telespot.py 8885551212 --dehashed   # Include breach data
+./telespot.py 8885551212 -o out.json  # Save to JSON
 ./telespot.py +442071234567 -c +44    # International
 ./telespot.py --api-status            # Check API config
 ./telespot.py --setup                 # Configure APIs

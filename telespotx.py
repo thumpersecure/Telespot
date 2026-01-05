@@ -5,6 +5,7 @@ Pre-release v0.1-alpha
 
 Uses httpx + asyncio for parallel API requests.
 No rate limiting - maximum speed.
+United States phone numbers only (+1).
 """
 
 import argparse
@@ -108,26 +109,27 @@ def load_config():
 
     return config
 
-def generate_formats(phone, country_code='+1'):
-    """Generate 6 unique phone number format variations."""
+def generate_formats(phone):
+    """Generate 6 unique US phone number format variations."""
     digits = re.sub(r'\D', '', phone)
 
     if len(digits) == 11 and digits.startswith('1'):
         digits = digits[1:]
     elif len(digits) != 10:
-        return [phone]
+        print(f"Error: Invalid US phone number. Expected 10 digits, got {len(digits)}.")
+        return []
 
     area = digits[:3]
     exchange = digits[3:6]
     subscriber = digits[6:]
 
     formats = [
-        f"{area}-{exchange}-{subscriber}",           # 856-570-5151
-        f"{digits}",                                  # 8565705151
-        f"({area}) {exchange}-{subscriber}",         # (856) 570-5151
-        f"{country_code}{digits}",                   # +18565705151
-        f'"{area}-{exchange}-{subscriber}"',         # "856-570-5151"
-        f'"{digits}"',                               # "8565705151"
+        f"{area}-{exchange}-{subscriber}",           # 888-555-1212
+        f"{digits}",                                  # 8885551212
+        f"({area}) {exchange}-{subscriber}",         # (888) 555-1212
+        f"+1{digits}",                               # +18885551212
+        f'"{area}-{exchange}-{subscriber}"',         # "888-555-1212"
+        f'"{digits}"',                               # "8885551212"
     ]
 
     return formats
@@ -326,16 +328,19 @@ async def search_format(client, query, config, include_dehashed=False, debug=Fal
 
     return all_results
 
-async def search_all_formats(phone, config, country_code='+1', keyword=None, site=None,
+async def search_all_formats(phone, config, keyword=None, site=None,
                              include_dehashed=False, verbose=False, no_color=False, debug=False):
-    """Search all phone formats in parallel."""
+    """Search all US phone formats in parallel."""
     c = Colors if not no_color else type('', (), {k: '' for k in dir(Colors) if not k.startswith('_')})()
 
-    formats = generate_formats(phone, country_code)
+    formats = generate_formats(phone)
+    if not formats:
+        return []
+
     all_results = []
 
     print(f"\n{c.BOLD}Searching for:{c.RESET} {phone}")
-    print(f"Country code: {country_code}")
+    print(f"Country: United States (+1)")
     print(f"Using {len(formats)} format variations")
     print(f"{c.CYAN}Mode: PARALLEL (no rate limiting){c.RESET}\n")
 
@@ -551,21 +556,22 @@ def save_results(results, patterns, output_file):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='TelespotX - Fast parallel phone number OSINT',
+        description='TelespotX - Fast parallel phone OSINT (US numbers only)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  telespotx.py 8565705151
-  telespotx.py 8565705151 -v
-  telespotx.py 8565705151 -k "owner" -o results.json
-  telespotx.py 8565705151 --dehashed
+  telespotx.py 8885551212
+  telespotx.py 8885551212 -v
+  telespotx.py 8885551212 -k "owner" -o results.json
+  telespotx.py 8885551212 --dehashed
+
+Note: This tool only supports United States phone numbers (+1).
         """
     )
 
-    parser.add_argument('phone', nargs='?', help='Phone number to search')
+    parser.add_argument('phone', nargs='?', help='US phone number to search (10 digits)')
     parser.add_argument('-k', '--keyword', help='Add keyword to search')
     parser.add_argument('-s', '--site', help='Limit to specific site')
-    parser.add_argument('-c', '--country', default='+1', help='Country code (default: +1)')
     parser.add_argument('-o', '--output', help='Save results to file (.json or .txt)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Show detailed results')
     parser.add_argument('--dehashed', action='store_true', help='Include Dehashed search')
@@ -604,7 +610,6 @@ Examples:
     results = asyncio.run(search_all_formats(
         args.phone,
         config,
-        country_code=args.country,
         keyword=args.keyword,
         site=args.site,
         include_dehashed=args.dehashed,
