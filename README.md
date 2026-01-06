@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/Python-3.6+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-Telephone number OSINT tool in Python. Searches Google, Bing, DuckDuckGo & Dehashed APIs in up to 10 formats and correlates results with pattern recognition.
+Telephone number OSINT tool written in Python. It searches Google, Bing, DuckDuckGo & Dehashed in up to 10 formats, and it then correlates results with pattern recognition.
 
 ## Quick Start
 
