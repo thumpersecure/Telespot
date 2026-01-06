@@ -11,6 +11,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.6+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/thumpersecure/Telespot?style=social)](https://github.com/thumpersecure/Telespot/stargazers)
 
 Telespot is a Python-based OSINT tool that investigates telephone numbers by searching them across multiple engines, including Google, Bing, DuckDuckGo, and Dehashed. It generates number-format variations and correlates results to surface names, locations, and other linked identifiers.
 
@@ -120,6 +121,14 @@ dehashed_api_key=email:key
 ## License
 
 MIT - See [LICENSE](LICENSE)
+
+---
+
+## Support
+
+If you find Telespot useful, consider buying me a coffee:
+
+**BTC:** `3L1Gc4avD4Bqoi2F9aq6z4heT13fXA8DZ9`
 
 ---
 
