@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/Python-3.6+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-Phone number OSINT tool. Searches Google, Bing, DuckDuckGo & Dehashed APIs to find names, locations, and usernames.
+Telespot is a Python-based OSINT tool that investigates telephone numbers by searching them across multiple engines, including Google, Bing, DuckDuckGo, and Dehashed. It generates number-format variations and correlates results to surface names, locations, and other linked identifiers.
 
 ## Quick Start
 
