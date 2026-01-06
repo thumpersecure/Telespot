@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/Python-3.6+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-Phone number OSINT tool. Searches Google, Bing, DuckDuckGo & Dehashed APIs to find names, locations, and usernames.
+Phone number OSINT tool. Searches Google, Bing, DuckDuckGo & Dehashed APIs in up to 10 formats with pattern recognition.
 
 ## Quick Start
 
