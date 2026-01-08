@@ -171,12 +171,23 @@ async def search_google(client, query, config, debug=False):
         return []
 
     url = "https://www.googleapis.com/customsearch/v1"
+
+    # Handle quoted queries - use exactTerms parameter for better results
+    clean_query = query
+    exact_terms = None
+    if query.startswith('"') and query.endswith('"'):
+        clean_query = query[1:-1]
+        exact_terms = clean_query
+
     params = {
         'key': api_key,
         'cx': cse_id,
-        'q': query,
+        'q': clean_query,
         'num': 10,
     }
+
+    if exact_terms:
+        params['exactTerms'] = exact_terms
 
     try:
         response = await client.get(url, params=params, headers=get_random_headers(), timeout=10.0)
