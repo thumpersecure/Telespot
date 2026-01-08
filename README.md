@@ -2,14 +2,14 @@
 
 # 📞 telespot
 
-```
+````
   _       *      _                     _   *
  | |_ ___| | ___  ___ _ __   ___ | |_
  | __/ _ \ |/ _ \/ __| '_ \ / _ \| __|*
  | ||  __/ |  __/\__ \ |_) | (_) | |_
   \__\___|_|\___||___/ .__/ \___/ \__|
 *                    |_|    *   v5.0-beta
-```
+````
 
 [![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=00D9FF&center=true&vCenter=true&width=435&lines=Phone+Number+OSINT+Tool;Search+Google%2C+Bing%2C+DuckDuckGo;Pattern+Analysis+%26+Confidence+Scoring;Find+Names%2C+Locations%2C+Usernames)](https://github.com/thumpersecure/Telespot)
 
