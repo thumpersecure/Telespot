@@ -351,12 +351,25 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
 
     try:
         url = "https://www.googleapis.com/customsearch/v1"
+
+        # Handle quoted queries - use exactTerms parameter for better results
+        clean_query = query
+        exact_terms = None
+        if query.startswith('"') and query.endswith('"'):
+            # Strip quotes and use exactTerms parameter instead
+            clean_query = query[1:-1]
+            exact_terms = clean_query
+
         params = {
             'key': api_key,
             'cx': cse_id,
-            'q': query,
+            'q': clean_query,
             'num': min(num_results, 10),
         }
+
+        # Add exactTerms for quoted searches (better exact phrase matching)
+        if exact_terms:
+            params['exactTerms'] = exact_terms
 
         headers = get_random_headers()
         response = requests.get(url, params=params, headers=headers, timeout=15)
