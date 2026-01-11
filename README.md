@@ -24,6 +24,7 @@
 [Features](#-features) •
 [Usage](#-usage) •
 [API Setup](#-api-setup) •
+[Case Study](CASE_STUDY.md) •
 [Support](#-support)
 
 </div>
