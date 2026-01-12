@@ -2,8 +2,6 @@
 
 <div align="center">
 
-[![GitHub stars](https://img.shields.io/github/stars/thumpersecure/Telespot?style=for-the-badge&logo=github&label=Stars)](https://github.com/thumpersecure/Telespot/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/thumpersecure/Telespot?style=for-the-badge&logo=github)](https://github.com/thumpersecure/Telespot/network)
 
 *A case study on building open-source intelligence tools*
 
