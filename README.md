@@ -259,7 +259,7 @@ dehashed_api_key=your_email@example.com:your_api_key
 
 Created with ❤️ by:
 
-- **Spin Apin** ([@thumpersecure](https://github.com/thumpersecure))
+- **Spin** ([@thumpersecure](https://github.com/thumpersecure))
 - User-Agent rotation concept from [@kaifcodec](https://github.com/kaifcodec)
 
 ---
@@ -267,18 +267,6 @@ Created with ❤️ by:
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
----
-
-## ☕ Support
-
-If you find Telespot useful, consider supporting the project:
-
-<div align="center">
-
-[![BTC](https://img.shields.io/badge/Donate-Bitcoin-orange?style=for-the-badge&logo=bitcoin)](https://www.blockchain.com/btc/address/3L1Gc4avD4Bqoi2F9aq6z4heT13fXA8DZ9)
-
-</div>
 
 ---
 
