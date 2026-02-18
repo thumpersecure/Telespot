@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 telespotx - Fast parallel phone number OSINT tool
-Pre-release v0.1-alpha
+Pre-release v0.2-alpha
 
 Uses httpx + asyncio for parallel API requests.
-No rate limiting - maximum speed.
+Includes captcha detection, retry logic, and DuckDuckGo HTML fallback.
 United States phone numbers only (+1).
 """
 
@@ -12,9 +12,11 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import re
 import sys
 from datetime import datetime
+from urllib.parse import unquote
 
 try:
     import httpx
@@ -23,7 +25,7 @@ except ImportError:
     sys.exit(1)
 
 # Version
-VERSION = "0.1-alpha"
+VERSION = "0.2-alpha"
 
 # ANSI Colors
 class Colors:
@@ -37,37 +39,99 @@ class Colors:
     BOLD = '\033[1m'
     RESET = '\033[0m'
 
-# User agents for rotation
+# User agents for rotation (updated versions)
 USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.3; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
 ]
 
+# Captcha and block indicators
+CAPTCHA_INDICATORS = [
+    'captcha', 'recaptcha', 'hcaptcha', 'challenge-platform',
+    'are you a robot', 'are you human', 'verify you are human',
+    'unusual traffic', 'automated requests', 'bot detection',
+    'access denied', 'forbidden', 'rate limit exceeded',
+    'please verify', 'security check', 'cf-challenge',
+]
+
+
 def get_random_headers():
-    """Get headers with random user agent."""
-    import random
-    return {
-        'User-Agent': random.choice(USER_AGENTS),
-        'Accept': 'application/json, text/html, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
+    """Get headers with random user agent and realistic fingerprint."""
+    ua = random.choice(USER_AGENTS)
+    is_firefox = 'Firefox' in ua
+
+    headers = {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8',
+        'Accept-Language': random.choice([
+            'en-US,en;q=0.9',
+            'en-US,en;q=0.9,es;q=0.8',
+            'en-GB,en;q=0.9,en-US;q=0.8',
+        ]),
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
         'Connection': 'keep-alive',
     }
+
+    if not is_firefox:
+        headers.update({
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'sec-ch-ua-platform': random.choice(['"Windows"', '"macOS"', '"Linux"']),
+        })
+
+    return headers
+
+
+def get_api_headers():
+    """Get headers tuned for API requests."""
+    headers = get_random_headers()
+    headers['Accept'] = 'application/json, text/html, */*'
+    headers.pop('Sec-Fetch-Dest', None)
+    headers.pop('Sec-Fetch-Mode', None)
+    headers.pop('Sec-Fetch-Site', None)
+    headers.pop('Sec-Fetch-User', None)
+    return headers
+
+
+def detect_captcha(response):
+    """Check if a response contains captcha or block indicators."""
+    if response.status_code in (403, 429, 503):
+        return True
+
+    content_type = response.headers.get('Content-Type', '')
+    if 'application/json' in content_type:
+        return False
+
+    try:
+        body = response.text.lower()
+        for indicator in CAPTCHA_INDICATORS:
+            if indicator in body:
+                return True
+    except Exception:
+        pass
+
+    return False
+
 
 def print_banner(no_color=False):
     """Print the telespotx banner in red, white, and blue."""
     if no_color:
-        banner = """
+        banner = f"""
   _       _                      _
  | |_ ___| | ___  ___ _ __   ___ | |___  __
  | __/ _ \\ |/ _ \\/ __| '_ \\ / _ \\| __\\ \\/ /
  | ||  __/ |  __/\\__ \\ |_) | (_) | |_ >  <
   \\__\\___|_|\\___||___/ .__/ \\___/ \\__/_/\\_\\
-                     |_|        v0.1-alpha
+                     |_|        v{VERSION}
         """
         print(banner)
     else:
@@ -162,8 +226,66 @@ def print_api_status(config, no_color=False):
     print(f"  {configured}/{total} APIs configured")
     print()
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASYNC SEARCH FUNCTIONS WITH RETRY AND CAPTCHA DETECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def async_request_with_retry(client, method, url, max_retries=2, backoff_base=1.5, debug=False, **kwargs):
+    """Make an async HTTP request with retry logic and captcha detection.
+
+    Returns (response, was_blocked) tuple.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            # Fresh headers on each retry
+            if 'headers' not in kwargs or attempt > 0:
+                if kwargs.pop('_api_mode', False) or kwargs.get('_api_mode'):
+                    kwargs['headers'] = get_api_headers()
+                else:
+                    kwargs['headers'] = get_random_headers()
+            kwargs.pop('_api_mode', None)
+
+            if 'timeout' not in kwargs:
+                kwargs['timeout'] = 12.0
+
+            if method == 'get':
+                response = await client.get(url, **kwargs)
+            else:
+                response = await client.post(url, **kwargs)
+
+            if detect_captcha(response):
+                if debug:
+                    print(f"      [DEBUG] Captcha/block detected (attempt {attempt + 1}), status={response.status_code}")
+                if attempt < max_retries:
+                    await asyncio.sleep(backoff_base * (2 ** attempt) + random.uniform(0.5, 1.5))
+                    continue
+                return response, True
+
+            if response.status_code == 429:
+                if attempt < max_retries:
+                    wait = backoff_base * (2 ** attempt) + random.uniform(1.0, 2.0)
+                    if debug:
+                        print(f"      [DEBUG] Rate limited, waiting {wait:.1f}s...")
+                    await asyncio.sleep(wait)
+                    continue
+                return response, True
+
+            return response, False
+
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            if debug:
+                print(f"      [DEBUG] Network error (attempt {attempt + 1}): {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(backoff_base * (2 ** attempt))
+                continue
+            raise
+
+    return None, True
+
+
 async def search_google(client, query, config, debug=False):
-    """Search using Google Custom Search API."""
+    """Search using Google Custom Search API with retry."""
     api_key = config.get('google_api_key')
     cse_id = config.get('google_cse_id')
 
@@ -172,7 +294,6 @@ async def search_google(client, query, config, debug=False):
 
     url = "https://www.googleapis.com/customsearch/v1"
 
-    # Handle quoted queries - use exactTerms parameter for better results
     clean_query = query
     exact_terms = None
     if query.startswith('"') and query.endswith('"'):
@@ -190,7 +311,15 @@ async def search_google(client, query, config, debug=False):
         params['exactTerms'] = exact_terms
 
     try:
-        response = await client.get(url, params=params, headers=get_random_headers(), timeout=10.0)
+        response, was_blocked = await async_request_with_retry(
+            client, 'get', url, params=params, _api_mode=True, debug=debug
+        )
+
+        if was_blocked:
+            if debug:
+                print(f"    [DEBUG] Google blocked/rate limited")
+            return []
+
         if response.status_code == 200:
             data = response.json()
             results = []
@@ -210,19 +339,27 @@ async def search_google(client, query, config, debug=False):
     return []
 
 async def search_bing(client, query, config, debug=False):
-    """Search using Bing Search API."""
+    """Search using Bing Search API with retry."""
     api_key = config.get('bing_api_key')
 
     if not api_key:
         return []
 
     url = "https://api.bing.microsoft.com/v7.0/search"
-    headers = get_random_headers()
+    headers = get_api_headers()
     headers['Ocp-Apim-Subscription-Key'] = api_key
     params = {'q': query, 'count': 10}
 
     try:
-        response = await client.get(url, params=params, headers=headers, timeout=10.0)
+        response, was_blocked = await async_request_with_retry(
+            client, 'get', url, params=params, headers=headers, debug=debug
+        )
+
+        if was_blocked:
+            if debug:
+                print(f"    [DEBUG] Bing blocked/rate limited")
+            return []
+
         if response.status_code == 200:
             data = response.json()
             results = []
@@ -242,20 +379,25 @@ async def search_bing(client, query, config, debug=False):
     return []
 
 async def search_duckduckgo(client, query, debug=False):
-    """Search using DuckDuckGo Instant Answer API."""
-    url = "https://api.duckduckgo.com/"
-    params = {
-        'q': query,
-        'format': 'json',
-        'no_html': 1,
-        'skip_disambig': 1,
-    }
+    """Search DuckDuckGo with Instant Answer API + HTML fallback."""
+    results = []
 
+    # Phase 1: Instant Answer API
     try:
-        response = await client.get(url, params=params, headers=get_random_headers(), timeout=10.0)
-        if response.status_code == 200:
+        url = "https://api.duckduckgo.com/"
+        params = {
+            'q': query,
+            'format': 'json',
+            'no_html': 1,
+            'skip_disambig': 1,
+        }
+
+        response, was_blocked = await async_request_with_retry(
+            client, 'get', url, params=params, _api_mode=True, debug=debug
+        )
+
+        if not was_blocked and response and response.status_code == 200:
             data = response.json()
-            results = []
 
             if data.get('AbstractText'):
                 results.append({
@@ -275,15 +417,78 @@ async def search_duckduckgo(client, query, debug=False):
                     })
 
             if debug:
-                print(f"    [DEBUG] DuckDuckGo returned {len(results)} results")
-            return results
+                print(f"    [DEBUG] DuckDuckGo API returned {len(results)} results")
+
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] DuckDuckGo error: {e}")
-    return []
+            print(f"    [DEBUG] DuckDuckGo API error: {e}")
+
+    # Phase 2: HTML fallback when API returns few results
+    if len(results) < 3:
+        html_results = await _search_duckduckgo_html(client, query, debug)
+        results.extend(html_results)
+
+    return results
+
+
+async def _search_duckduckgo_html(client, query, debug=False):
+    """Scrape DuckDuckGo HTML lite search for actual web results."""
+    results = []
+
+    try:
+        url = "https://html.duckduckgo.com/html/"
+        data = {'q': query, 'b': ''}
+
+        response, was_blocked = await async_request_with_retry(
+            client, 'post', url, data=data, max_retries=1, debug=debug
+        )
+
+        if was_blocked:
+            if debug:
+                print(f"    [DEBUG] DuckDuckGo HTML blocked")
+            return results
+
+        if response and response.status_code == 200:
+            body = response.text
+
+            link_pattern = r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>'
+            links = re.findall(link_pattern, body, re.DOTALL)
+
+            snippet_pattern = r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>'
+            snippets = re.findall(snippet_pattern, body, re.DOTALL)
+
+            for i, (href, title) in enumerate(links[:10]):
+                clean_title = re.sub(r'<[^>]+>', '', title).strip()
+                clean_snippet = ''
+                if i < len(snippets):
+                    clean_snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip()
+
+                actual_url = href
+                if 'uddg=' in href:
+                    url_match = re.search(r'uddg=([^&]+)', href)
+                    if url_match:
+                        actual_url = unquote(url_match.group(1))
+
+                if clean_title and actual_url:
+                    results.append({
+                        'title': clean_title,
+                        'url': actual_url,
+                        'snippet': clean_snippet,
+                        'source': 'DuckDuckGo'
+                    })
+
+            if debug:
+                print(f"    [DEBUG] DuckDuckGo HTML returned {len(results)} results")
+
+    except Exception as e:
+        if debug:
+            print(f"    [DEBUG] DuckDuckGo HTML error: {e}")
+
+    return results
+
 
 async def search_dehashed(client, query, config, debug=False):
-    """Search using Dehashed API."""
+    """Search using Dehashed API with retry."""
     api_key = config.get('dehashed_api_key')
 
     if not api_key or ':' not in api_key:
@@ -294,13 +499,16 @@ async def search_dehashed(client, query, config, debug=False):
     params = {'query': f'phone:"{query}"'}
 
     try:
-        response = await client.get(
-            url,
-            params=params,
-            auth=(email, key),
-            headers=get_random_headers(),
-            timeout=10.0
+        response, was_blocked = await async_request_with_retry(
+            client, 'get', url, params=params, auth=(email, key),
+            _api_mode=True, debug=debug
         )
+
+        if was_blocked:
+            if debug:
+                print(f"    [DEBUG] Dehashed blocked/rate limited")
+            return []
+
         if response.status_code == 200:
             data = response.json()
             results = []
@@ -339,9 +547,26 @@ async def search_format(client, query, config, include_dehashed=False, debug=Fal
 
     return all_results
 
+
+def deduplicate_results(results):
+    """Remove duplicate results by URL."""
+    seen_urls = set()
+    unique = []
+
+    for result in results:
+        url = result.get('url', '').rstrip('/').lower().strip()
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique.append(result)
+        elif not url:
+            unique.append(result)
+
+    return unique
+
+
 async def search_all_formats(phone, config, keyword=None, site=None,
                              include_dehashed=False, verbose=False, no_color=False, debug=False):
-    """Search all US phone formats in parallel."""
+    """Search all US phone formats in parallel with captcha resilience."""
     c = Colors if not no_color else type('', (), {k: '' for k in dir(Colors) if not k.startswith('_')})()
 
     formats = generate_formats(phone)
@@ -353,7 +578,7 @@ async def search_all_formats(phone, config, keyword=None, site=None,
     print(f"\n{c.BOLD}Searching for:{c.RESET} {phone}")
     print(f"Country: United States (+1)")
     print(f"Using {len(formats)} format variations")
-    print(f"{c.CYAN}Mode: PARALLEL (no rate limiting){c.RESET}\n")
+    print(f"{c.CYAN}Mode: PARALLEL (with captcha detection + retry){c.RESET}\n")
 
     async with httpx.AsyncClient() as client:
         # Build queries for all formats
@@ -376,9 +601,11 @@ async def search_all_formats(phone, config, keyword=None, site=None,
         elapsed = (datetime.now() - start_time).total_seconds()
 
         # Process results
+        raw_total = 0
         for i, (fmt, _) in enumerate(queries):
             results = results_per_format[i] if isinstance(results_per_format[i], list) else []
             result_count = len(results)
+            raw_total += result_count
 
             print(f"  [{i+1}/{len(formats)}] {fmt}: {c.GREEN}{result_count} results{c.RESET}")
 
@@ -386,7 +613,16 @@ async def search_all_formats(phone, config, keyword=None, site=None,
                 r['format'] = fmt
             all_results.extend(results)
 
+        # Deduplicate
+        all_results = deduplicate_results(all_results)
+        deduped_total = len(all_results)
+
         print(f"\n{c.GREEN}Completed in {elapsed:.1f} seconds{c.RESET}")
+        print(f"Total: {deduped_total} unique results", end='')
+        if deduped_total < raw_total:
+            print(f" ({raw_total - deduped_total} duplicates removed)")
+        else:
+            print()
 
     return all_results
 

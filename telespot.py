@@ -205,41 +205,287 @@ config = Config()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 USER_AGENTS = [
-    # Chrome on Windows
+    # Chrome on Windows (latest versions)
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
     # Chrome on Mac
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     # Chrome on Linux
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    # Firefox
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.1; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    # Firefox (latest)
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.3; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0',
     # Edge
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0',
     # Safari
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
     # Mobile
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+]
+
+# Common referer URLs to appear as natural browser traffic
+REFERERS = [
+    'https://www.google.com/',
+    'https://www.bing.com/',
+    'https://duckduckgo.com/',
+    'https://search.yahoo.com/',
+    '',  # Direct navigation (no referer)
+]
+
+# Captcha and block indicators in response content
+CAPTCHA_INDICATORS = [
+    'captcha', 'recaptcha', 'hcaptcha', 'challenge-platform',
+    'are you a robot', 'are you human', 'verify you are human',
+    'unusual traffic', 'automated requests', 'bot detection',
+    'access denied', 'forbidden', 'rate limit exceeded',
+    'please verify', 'security check', 'blocked',
+    'cf-challenge', 'cf-browser-verification',
 ]
 
 
 def get_random_headers():
-    """Get request headers with random User-Agent"""
-    return {
-        'User-Agent': random.choice(USER_AGENTS),
-        'Accept': 'application/json, text/html, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate',
+    """Get request headers with random User-Agent and realistic browser fingerprint"""
+    ua = random.choice(USER_AGENTS)
+    is_firefox = 'Firefox' in ua
+
+    headers = {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8',
+        'Accept-Language': random.choice([
+            'en-US,en;q=0.9',
+            'en-US,en;q=0.9,es;q=0.8',
+            'en-GB,en;q=0.9,en-US;q=0.8',
+            'en-US,en;q=0.5',
+        ]),
+        'Accept-Encoding': 'gzip, deflate, br',
         'DNT': '1',
         'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
     }
+
+    # Add Sec-Fetch headers (Chrome/Edge only, not Firefox)
+    if not is_firefox:
+        headers.update({
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'sec-ch-ua-platform': random.choice(['"Windows"', '"macOS"', '"Linux"']),
+        })
+
+    # Add referer sometimes (not always - real browsers don't always send one)
+    ref = random.choice(REFERERS)
+    if ref:
+        headers['Referer'] = ref
+
+    return headers
+
+
+def get_api_headers():
+    """Get headers specifically tuned for API requests (JSON-focused)"""
+    headers = get_random_headers()
+    headers['Accept'] = 'application/json, text/html, */*'
+    # Remove browser-navigation headers not appropriate for API calls
+    headers.pop('Upgrade-Insecure-Requests', None)
+    headers.pop('Sec-Fetch-Dest', None)
+    headers.pop('Sec-Fetch-Mode', None)
+    headers.pop('Sec-Fetch-Site', None)
+    headers.pop('Sec-Fetch-User', None)
+    return headers
+
+
+def detect_captcha(response):
+    """Check if a response contains captcha or block indicators.
+
+    Returns True if the response appears to be a captcha/block page
+    rather than legitimate search results.
+    """
+    # Check status codes that indicate blocking
+    if response.status_code in (403, 429, 503):
+        return True
+
+    # Check content type - captcha pages are usually HTML, not JSON
+    content_type = response.headers.get('Content-Type', '')
+    if 'application/json' in content_type:
+        return False  # JSON responses are legitimate API responses
+
+    # Check response body for captcha indicators
+    try:
+        body = response.text.lower()
+        for indicator in CAPTCHA_INDICATORS:
+            if indicator in body:
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+def create_session():
+    """Create a requests.Session with connection pooling and retry-friendly settings"""
+    session = requests.Session()
+    # Connection pooling for better performance and less suspicious traffic patterns
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=10,
+        pool_maxsize=10,
+        max_retries=0,  # We handle retries ourselves
+    )
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+
+# Global session for connection reuse
+_session = None
+
+def get_session():
+    """Get or create the global requests session"""
+    global _session
+    if _session is None:
+        _session = create_session()
+    return _session
+
+
+def request_with_retry(method, url, max_retries=3, backoff_base=2.0, debug=False, **kwargs):
+    """Make an HTTP request with retry logic and captcha detection.
+
+    Retries on transient failures (429, 503, network errors) with exponential backoff.
+    Detects captcha/block pages and retries with fresh headers.
+
+    Returns (response, was_blocked) tuple. was_blocked indicates if all retries
+    were exhausted due to captcha/rate limiting.
+    """
+    session = get_session()
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            # Use fresh headers on each retry to vary fingerprint
+            if 'headers' not in kwargs or attempt > 0:
+                if kwargs.get('_api_mode'):
+                    kwargs['headers'] = get_api_headers()
+                else:
+                    kwargs['headers'] = get_random_headers()
+            kwargs.pop('_api_mode', None)
+
+            if 'timeout' not in kwargs:
+                kwargs['timeout'] = 15
+
+            response = getattr(session, method)(url, **kwargs)
+
+            # Check for captcha/blocking
+            if detect_captcha(response):
+                if debug:
+                    print(f"      [DEBUG] Captcha/block detected (attempt {attempt + 1}/{max_retries + 1}), status={response.status_code}")
+
+                if attempt < max_retries:
+                    wait = backoff_base * (2 ** attempt) + random.uniform(0.5, 2.0)
+                    if debug:
+                        print(f"      [DEBUG] Backing off {wait:.1f}s before retry...")
+                    time.sleep(wait)
+                    continue
+                else:
+                    return response, True  # All retries exhausted, was blocked
+
+            # Check for rate limiting specifically (429)
+            if response.status_code == 429:
+                if attempt < max_retries:
+                    # Respect Retry-After header if present
+                    retry_after = response.headers.get('Retry-After')
+                    if retry_after:
+                        try:
+                            wait = float(retry_after)
+                        except ValueError:
+                            wait = backoff_base * (2 ** attempt)
+                    else:
+                        wait = backoff_base * (2 ** attempt) + random.uniform(1.0, 3.0)
+                    if debug:
+                        print(f"      [DEBUG] Rate limited (429), waiting {wait:.1f}s...")
+                    time.sleep(wait)
+                    continue
+                return response, True
+
+            return response, False
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_exception = e
+            if debug:
+                print(f"      [DEBUG] Network error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+            if attempt < max_retries:
+                wait = backoff_base * (2 ** attempt) + random.uniform(0.5, 1.5)
+                time.sleep(wait)
+                continue
+            raise
+
+        except Exception as e:
+            last_exception = e
+            if debug:
+                print(f"      [DEBUG] Unexpected error: {e}")
+            raise
+
+    # Should not reach here, but just in case
+    if last_exception:
+        raise last_exception
+    return None, True
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADAPTIVE RATE LIMITING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AdaptiveRateLimiter:
+    """Rate limiter that adjusts delay based on observed blocking/success patterns.
+
+    Starts with a moderate delay and increases if blocks are detected,
+    or decreases (to a minimum) if requests succeed consistently.
+    """
+
+    def __init__(self, base_delay=2.0, min_delay=1.5, max_delay=15.0):
+        self.base_delay = base_delay
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+        self.current_delay = base_delay
+        self.consecutive_successes = 0
+        self.consecutive_blocks = 0
+        self.total_blocks = 0
+
+    def record_success(self):
+        """Record a successful request"""
+        self.consecutive_successes += 1
+        self.consecutive_blocks = 0
+        # Gradually reduce delay after sustained success
+        if self.consecutive_successes >= 3:
+            self.current_delay = max(self.min_delay, self.current_delay * 0.85)
+
+    def record_block(self):
+        """Record a blocked/rate-limited request"""
+        self.consecutive_blocks += 1
+        self.consecutive_successes = 0
+        self.total_blocks += 1
+        # Increase delay on blocks
+        self.current_delay = min(self.max_delay, self.current_delay * 1.8)
+
+    def wait(self):
+        """Sleep for the adaptive delay with jitter"""
+        jitter = random.uniform(-0.5, 1.5)
+        delay = max(self.min_delay, self.current_delay + jitter)
+        time.sleep(delay)
+        return delay
+
+    def get_stats(self):
+        """Get rate limiter statistics"""
+        return {
+            'current_delay': round(self.current_delay, 1),
+            'total_blocks': self.total_blocks,
+        }
 
 
 def rate_limit():
-    """Random rate limiting between 3-5 seconds"""
+    """Legacy rate limiting - random 3-5 seconds (used when adaptive limiter not active)"""
     delay = random.uniform(3.0, 5.0)
     time.sleep(delay)
     return delay
@@ -325,7 +571,7 @@ def generate_phone_formats(phone_number, country_code='+1'):
     # 2 Special formats
     special = [
         f'({area}-{prefix}-{line})',                  # (215-555-1234)
-        f'"({area}) {prefix}-{line})"',               # "(215) 555-1234)"
+        f'"{area}.{prefix}.{line}"',                  # "215.555.1234" (dot-separated)
     ]
 
     return basic + quoted + special
@@ -340,8 +586,8 @@ def get_dtmf_representation(phone_number):
 # API SEARCH FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, debug=False):
-    """Search using Google Custom Search API"""
+def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, debug=False, rate_limiter=None):
+    """Search using Google Custom Search API with retry and captcha detection"""
     results = []
 
     if not api_key or not cse_id:
@@ -356,7 +602,6 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
         clean_query = query
         exact_terms = None
         if query.startswith('"') and query.endswith('"'):
-            # Strip quotes and use exactTerms parameter instead
             clean_query = query[1:-1]
             exact_terms = clean_query
 
@@ -367,12 +612,18 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
             'num': min(num_results, 10),
         }
 
-        # Add exactTerms for quoted searches (better exact phrase matching)
         if exact_terms:
             params['exactTerms'] = exact_terms
 
-        headers = get_random_headers()
-        response = requests.get(url, params=params, headers=headers, timeout=15)
+        response, was_blocked = request_with_retry(
+            'get', url, params=params, _api_mode=True, debug=debug
+        )
+
+        if was_blocked:
+            if rate_limiter:
+                rate_limiter.record_block()
+            print(f"    {color.warning('Google API blocked/rate limited - backing off')}")
+            return results
 
         if debug:
             print(f"    [DEBUG] Google API status: {response.status_code}")
@@ -388,8 +639,12 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
                 })
                 if verbose:
                     print(f"      Found: {item.get('title', '')[:60]}...")
+            if rate_limiter:
+                rate_limiter.record_success()
         elif response.status_code == 429:
             print(f"    {color.warning('Google API quota exceeded')}")
+            if rate_limiter:
+                rate_limiter.record_block()
         elif debug:
             print(f"    [DEBUG] Google error: {response.text[:100]}")
 
@@ -400,8 +655,8 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
     return results
 
 
-def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False):
-    """Search using Bing Search API (Azure Cognitive Services)"""
+def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False, rate_limiter=None):
+    """Search using Bing Search API (Azure Cognitive Services) with retry and captcha detection"""
     results = []
 
     if not api_key:
@@ -411,7 +666,7 @@ def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False):
 
     try:
         url = "https://api.bing.microsoft.com/v7.0/search"
-        headers = get_random_headers()
+        headers = get_api_headers()
         headers['Ocp-Apim-Subscription-Key'] = api_key
         params = {
             'q': query,
@@ -419,7 +674,15 @@ def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False):
             'mkt': 'en-US',
         }
 
-        response = requests.get(url, headers=headers, params=params, timeout=15)
+        response, was_blocked = request_with_retry(
+            'get', url, headers=headers, params=params, debug=debug
+        )
+
+        if was_blocked:
+            if rate_limiter:
+                rate_limiter.record_block()
+            print(f"    {color.warning('Bing API blocked/rate limited - backing off')}")
+            return results
 
         if debug:
             print(f"    [DEBUG] Bing API status: {response.status_code}")
@@ -435,10 +698,14 @@ def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False):
                 })
                 if verbose:
                     print(f"      Found: {item.get('name', '')[:60]}...")
+            if rate_limiter:
+                rate_limiter.record_success()
         elif response.status_code == 401:
             print(f"    {color.warning('Bing API key invalid')}")
         elif response.status_code == 429:
             print(f"    {color.warning('Bing API quota exceeded')}")
+            if rate_limiter:
+                rate_limiter.record_block()
         elif debug:
             print(f"    [DEBUG] Bing error: {response.text[:100]}")
 
@@ -449,12 +716,18 @@ def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False):
     return results
 
 
-def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False):
-    """Search using DuckDuckGo Instant Answer API"""
+def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False, rate_limiter=None):
+    """Search using DuckDuckGo Instant Answer API with HTML fallback.
+
+    The Instant Answer API only returns knowledge-graph style results,
+    which are often empty for phone numbers. When the API returns no results,
+    falls back to scraping the DuckDuckGo HTML lite search page for
+    actual web results.
+    """
     results = []
 
+    # --- Phase 1: Try the Instant Answer API first ---
     try:
-        # DuckDuckGo Instant Answer API
         url = "https://api.duckduckgo.com/"
         params = {
             'q': query,
@@ -463,13 +736,17 @@ def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False):
             'skip_disambig': 1,
         }
 
-        headers = get_random_headers()
-        response = requests.get(url, params=params, headers=headers, timeout=15)
+        response, was_blocked = request_with_retry(
+            'get', url, params=params, _api_mode=True, debug=debug
+        )
 
-        if debug:
-            print(f"    [DEBUG] DuckDuckGo API status: {response.status_code}")
+        if was_blocked:
+            if debug:
+                print(f"    [DEBUG] DuckDuckGo API blocked, trying HTML fallback...")
+        elif response and response.status_code == 200:
+            if debug:
+                print(f"    [DEBUG] DuckDuckGo API status: {response.status_code}")
 
-        if response.status_code == 200:
             data = response.json()
 
             # Abstract
@@ -506,13 +783,91 @@ def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False):
 
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] DuckDuckGo exception: {e}")
+            print(f"    [DEBUG] DuckDuckGo API exception: {e}")
+
+    # --- Phase 2: HTML fallback when API returns few/no results ---
+    if len(results) < 3:
+        html_results = _search_duckduckgo_html(query, num_results, verbose, debug, rate_limiter)
+        results.extend(html_results)
+
+    if rate_limiter and results:
+        rate_limiter.record_success()
 
     return results
 
 
-def search_dehashed_api(query, api_key, verbose=False, debug=False):
-    """Search Dehashed breach database (optional)"""
+def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, rate_limiter=None):
+    """Scrape DuckDuckGo HTML lite search for actual web results.
+
+    This is the fallback when the Instant Answer API returns nothing,
+    which is common for phone number queries. The HTML lite version is
+    lightweight and less likely to trigger captchas.
+    """
+    results = []
+
+    try:
+        url = "https://html.duckduckgo.com/html/"
+        data = {'q': query, 'b': ''}
+
+        response, was_blocked = request_with_retry(
+            'post', url, data=data, max_retries=2, debug=debug
+        )
+
+        if was_blocked:
+            if rate_limiter:
+                rate_limiter.record_block()
+            if debug:
+                print(f"    [DEBUG] DuckDuckGo HTML search blocked")
+            return results
+
+        if response and response.status_code == 200:
+            body = response.text
+
+            # Parse result links: <a rel="nofollow" class="result__a" href="...">title</a>
+            link_pattern = r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>'
+            links = re.findall(link_pattern, body, re.DOTALL)
+
+            # Parse snippets: <a class="result__snippet" ...>snippet text</a>
+            snippet_pattern = r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>'
+            snippets = re.findall(snippet_pattern, body, re.DOTALL)
+
+            for i, (href, title) in enumerate(links[:num_results]):
+                # Clean HTML tags from title and snippet
+                clean_title = re.sub(r'<[^>]+>', '', title).strip()
+                clean_snippet = ''
+                if i < len(snippets):
+                    clean_snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip()
+
+                # DuckDuckGo wraps URLs in a redirect - extract the actual URL
+                actual_url = href
+                if 'uddg=' in href:
+                    url_match = re.search(r'uddg=([^&]+)', href)
+                    if url_match:
+                        from urllib.parse import unquote
+                        actual_url = unquote(url_match.group(1))
+
+                if clean_title and actual_url:
+                    results.append({
+                        'title': clean_title,
+                        'url': actual_url,
+                        'snippet': clean_snippet,
+                        'source': 'DuckDuckGo'
+                    })
+                    if verbose:
+                        print(f"      Found: {clean_title[:60]}...")
+
+            if debug:
+                print(f"    [DEBUG] DuckDuckGo HTML returned {len(results)} results")
+
+    except Exception as e:
+        if debug:
+            print(f"    [DEBUG] DuckDuckGo HTML exception: {e}")
+
+    return results
+
+
+def search_dehashed_api(query, api_key, verbose=False, debug=False, rate_limiter=None):
+    """Search Dehashed breach database (optional) with retry and captcha detection"""
     results = []
 
     if not api_key:
@@ -523,11 +878,19 @@ def search_dehashed_api(query, api_key, verbose=False, debug=False):
     try:
         url = "https://api.dehashed.com/search"
         params = {'query': f'phone:"{query}"'}
-        headers = get_random_headers()
+        headers = get_api_headers()
         headers['Accept'] = 'application/json'
         auth = (api_key.split(':')[0], api_key.split(':')[1]) if ':' in api_key else (api_key, '')
 
-        response = requests.get(url, params=params, headers=headers, auth=auth, timeout=15)
+        response, was_blocked = request_with_retry(
+            'get', url, params=params, headers=headers, auth=auth, debug=debug
+        )
+
+        if was_blocked:
+            if rate_limiter:
+                rate_limiter.record_block()
+            print(f"    {color.warning('Dehashed API blocked/rate limited')}")
+            return results
 
         if debug:
             print(f"    [DEBUG] Dehashed API status: {response.status_code}")
@@ -544,6 +907,8 @@ def search_dehashed_api(query, api_key, verbose=False, debug=False):
                 })
                 if verbose:
                     print(f"      Found: {name[:60]}...")
+            if rate_limiter:
+                rate_limiter.record_success()
         elif response.status_code == 401:
             print(f"    {color.warning('Dehashed API key invalid')}")
         elif debug:
@@ -665,6 +1030,35 @@ def analyze_results(all_results, verbose=False):
         'confidence': confidence,
         'confidence_pct': confidence_pct,
     }
+
+
+def deduplicate_results(all_results):
+    """Remove duplicate results across all format groups by URL.
+
+    Keeps the first occurrence (with the most complete data) and removes
+    later duplicates. This prevents inflated result counts and improves
+    pattern analysis accuracy.
+
+    Returns a new dict with the same format-keyed structure but deduplicated.
+    """
+    seen_urls = set()
+    deduped = {}
+
+    for fmt, results in all_results.items():
+        unique_results = []
+        for result in results:
+            url = result.get('url', '').rstrip('/')
+            # Normalize URL for comparison (strip trailing slash, lowercase)
+            normalized = url.lower().strip()
+            if normalized and normalized not in seen_urls:
+                seen_urls.add(normalized)
+                unique_results.append(result)
+            elif not normalized:
+                # Keep results without URLs (e.g., some DuckDuckGo results)
+                unique_results.append(result)
+        deduped[fmt] = unique_results
+
+    return deduped
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # OUTPUT FUNCTIONS
@@ -945,7 +1339,7 @@ def update_from_repo():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def run_search(phone_number, args):
-    """Main search orchestration"""
+    """Main search orchestration with adaptive rate limiting and captcha resilience"""
     global color
 
     # Set color mode
@@ -982,7 +1376,13 @@ def run_search(phone_number, args):
     google_cse = config.get('google_cse_id', '')
     bing_key = config.get('bing_api_key', '')
     dehashed_key = config.get('dehashed_api_key', '')
-    delay = int(config.get('delay_seconds', '2'))
+
+    # Initialize adaptive rate limiter
+    limiter = AdaptiveRateLimiter(
+        base_delay=float(config.get('delay_seconds', '2')),
+        min_delay=1.5,
+        max_delay=15.0,
+    )
 
     all_results = {}
     total_found = 0
@@ -1001,47 +1401,67 @@ def run_search(phone_number, args):
 
         # Google API
         if google_key and google_cse:
-            print(f"  → Google API...", end=' ', flush=True)
-            results = search_google_api(query, google_key, google_cse, 10, args.verbose, args.debug)
+            print(f"  -> Google API...", end=' ', flush=True)
+            results = search_google_api(query, google_key, google_cse, 10, args.verbose, args.debug, limiter)
             format_results.extend(results)
             print(f"({len(results)} results)")
             time.sleep(1)
 
         # Bing API
         if bing_key:
-            print(f"  → Bing API...", end=' ', flush=True)
-            results = search_bing_api(query, bing_key, 10, args.verbose, args.debug)
+            print(f"  -> Bing API...", end=' ', flush=True)
+            results = search_bing_api(query, bing_key, 10, args.verbose, args.debug, limiter)
             format_results.extend(results)
             print(f"({len(results)} results)")
             time.sleep(1)
 
-        # DuckDuckGo (always available)
-        print(f"  → DuckDuckGo...", end=' ', flush=True)
-        results = search_duckduckgo_api(query, 10, args.verbose, args.debug)
+        # DuckDuckGo (always available, with HTML fallback)
+        print(f"  -> DuckDuckGo...", end=' ', flush=True)
+        results = search_duckduckgo_api(query, 10, args.verbose, args.debug, limiter)
         format_results.extend(results)
         print(f"({len(results)} results)")
 
         # Dehashed (optional)
         if dehashed_key and args.dehashed:
-            print(f"  → Dehashed...", end=' ', flush=True)
+            print(f"  -> Dehashed...", end=' ', flush=True)
             clean_query = re.sub(r'\D', '', fmt)
-            results = search_dehashed_api(clean_query, dehashed_key, args.verbose, args.debug)
+            results = search_dehashed_api(clean_query, dehashed_key, args.verbose, args.debug, limiter)
             format_results.extend(results)
             print(f"({len(results)} results)")
 
         all_results[fmt] = format_results
         total_found += len(format_results)
 
-        print(f"  {color.success(f'✓ {len(format_results)} total for this format')}")
+        print(f"  {color.success(f'+ {len(format_results)} total for this format')}")
 
-        # Rate limiting (random 3-5 seconds)
+        # Adaptive rate limiting (adjusts based on block/success patterns)
         if i < len(formats):
-            delay_time = rate_limit()
-            print(f"  {color.warning(f'⏳ Waited {delay_time:.1f} seconds')}\n")
+            delay_time = limiter.wait()
+            stats = limiter.get_stats()
+            status = f"delay={stats['current_delay']}s"
+            if stats['total_blocks'] > 0:
+                status += f", blocks={stats['total_blocks']}"
+            print(f"  {color.warning(f'Waited {delay_time:.1f}s ({status})')}\n")
         else:
             print()
 
-    print(f"\n{color.header(f'Total Results: {total_found}')}\n")
+    # Deduplicate results across formats
+    raw_total = total_found
+    all_results = deduplicate_results(all_results)
+    deduped_total = sum(len(r) for r in all_results.values())
+
+    print(f"\n{color.header(f'Total Results: {deduped_total}')}", end='')
+    if deduped_total < raw_total:
+        print(f" ({raw_total - deduped_total} duplicates removed)")
+    else:
+        print()
+
+    # Show rate limiter summary if there were blocks
+    stats = limiter.get_stats()
+    if stats['total_blocks'] > 0:
+        block_count = stats['total_blocks']
+        print(color.warning(f'Rate limit events: {block_count} (delays auto-adjusted)'))
+    print()
 
     # Analyze
     print("Analyzing patterns...")
