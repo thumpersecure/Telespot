@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 telespotx - Fast parallel phone number OSINT tool
-Pre-release v0.2-alpha
+v0.3.0
 
 Uses httpx + asyncio for parallel API requests.
 Includes captcha detection, retry logic, and DuckDuckGo HTML fallback.
@@ -24,102 +24,12 @@ except ImportError:
     print("telespotx requires httpx. Install with: pip install httpx")
     sys.exit(1)
 
+from telespot_common.colors import Colors
+from telespot_common.config import read_simple_kv_config, resolve_config_path
+from telespot_common.http_fingerprint import detect_captcha, get_api_headers, get_random_headers
+
 # Version
-VERSION = "0.2-alpha"
-
-# ANSI Colors
-class Colors:
-    RED = '\033[91m'
-    WHITE = '\033[97m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    MAGENTA = '\033[95m'
-    BOLD = '\033[1m'
-    RESET = '\033[0m'
-
-# User agents for rotation (updated versions)
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.3; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
-]
-
-# Captcha and block indicators
-CAPTCHA_INDICATORS = [
-    'captcha', 'recaptcha', 'hcaptcha', 'challenge-platform',
-    'are you a robot', 'are you human', 'verify you are human',
-    'unusual traffic', 'automated requests', 'bot detection',
-    'access denied', 'forbidden', 'rate limit exceeded',
-    'please verify', 'security check', 'cf-challenge',
-]
-
-
-def get_random_headers():
-    """Get headers with random user agent and realistic fingerprint."""
-    ua = random.choice(USER_AGENTS)
-    is_firefox = 'Firefox' in ua
-
-    headers = {
-        'User-Agent': ua,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8',
-        'Accept-Language': random.choice([
-            'en-US,en;q=0.9',
-            'en-US,en;q=0.9,es;q=0.8',
-            'en-GB,en;q=0.9,en-US;q=0.8',
-        ]),
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-    }
-
-    if not is_firefox:
-        headers.update({
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'sec-ch-ua-platform': random.choice(['"Windows"', '"macOS"', '"Linux"']),
-        })
-
-    return headers
-
-
-def get_api_headers():
-    """Get headers tuned for API requests."""
-    headers = get_random_headers()
-    headers['Accept'] = 'application/json, text/html, */*'
-    headers.pop('Sec-Fetch-Dest', None)
-    headers.pop('Sec-Fetch-Mode', None)
-    headers.pop('Sec-Fetch-Site', None)
-    headers.pop('Sec-Fetch-User', None)
-    return headers
-
-
-def detect_captcha(response):
-    """Check if a response contains captcha or block indicators."""
-    if response.status_code in (403, 429, 503):
-        return True
-
-    content_type = response.headers.get('Content-Type', '')
-    if 'application/json' in content_type:
-        return False
-
-    try:
-        body = response.text.lower()
-        for indicator in CAPTCHA_INDICATORS:
-            if indicator in body:
-                return True
-    except Exception:
-        pass
-
-    return False
+VERSION = "0.3.0"
 
 
 def print_banner(no_color=False):
@@ -151,27 +61,16 @@ def print_banner(no_color=False):
 
 def load_config():
     """Load API configuration from .telespot_config file."""
-    config = {
-        'google_api_key': '',
-        'google_cse_id': '',
-        'bing_api_key': '',
-        'dehashed_api_key': '',
-        'default_country_code': '+1',
+    defaults = {
+        "google_api_key": "",
+        "google_cse_id": "",
+        "bing_api_key": "",
+        "dehashed_api_key": "",
+        "default_country_code": "+1",
     }
 
-    config_path = os.path.expanduser('~/.telespot_config')
-    if not os.path.exists(config_path):
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.telespot_config')
-
-    if os.path.exists(config_path):
-        with open(config_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    config[key.strip()] = value.strip()
-
-    return config
+    config_path = resolve_config_path(local_dir=os.path.dirname(os.path.abspath(__file__)))
+    return read_simple_kv_config(config_path, defaults)
 
 def generate_formats(phone):
     """Generate 6 unique US phone number format variations."""
@@ -550,18 +449,9 @@ async def search_format(client, query, config, include_dehashed=False, debug=Fal
 
 def deduplicate_results(results):
     """Remove duplicate results by URL."""
-    seen_urls = set()
-    unique = []
+    from telespot_common.dedupe import deduplicate_results_list
 
-    for result in results:
-        url = result.get('url', '').rstrip('/').lower().strip()
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            unique.append(result)
-        elif not url:
-            unique.append(result)
-
-    return unique
+    return deduplicate_results_list(results)
 
 
 async def search_all_formats(phone, config, keyword=None, site=None,

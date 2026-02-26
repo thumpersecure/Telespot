@@ -8,12 +8,12 @@
  | __/ _ \ |/ _ \/ __| '_ \ / _ \| __|*
  | ||  __/ |  __/\__ \ |_) | (_) | |_
   \__\___|_|\___||___/ .__/ \___/ \__|
-*                    |_|    *   v5.0-beta
+*                    |_|    *   v5.0.0
 ```
 
 [![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=00D9FF&center=true&vCenter=true&width=435&lines=Phone+Number+OSINT+Tool;Search+Google%2C+Bing%2C+DuckDuckGo;Pattern+Analysis+%26+Confidence+Scoring;Find+Names%2C+Locations%2C+Usernames)](https://github.com/thumpersecure/Telespot)
 
-[![Python](https://img.shields.io/badge/Python-3.6+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/thumpersecure/Telespot?style=for-the-badge&logo=github)](https://github.com/thumpersecure/Telespot/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/thumpersecure/Telespot?style=for-the-badge&logo=github)](https://github.com/thumpersecure/Telespot/network)
