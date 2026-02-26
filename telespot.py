@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 telespot - Phone Number OSINT Tool
-Version 5.0-beta
+Version 5.0.0
 
 API-based phone number search across Google, Bing, and DuckDuckGo
 with pattern recognition for names, locations, and usernames.
@@ -20,9 +20,13 @@ from collections import Counter
 from datetime import datetime
 from urllib.parse import quote_plus
 
-VERSION = "5.0-beta"
+from telespot_common.colors import Colors
+from telespot_common.config import resolve_config_path
+from telespot_common.http_fingerprint import detect_captcha, get_api_headers, get_random_headers
+
+VERSION = "5.0.0"
 REPO_URL = "https://github.com/thumpersecure/Telespot"
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".telespot_config")
+CONFIG_FILE = resolve_config_path(local_dir=os.path.dirname(os.path.abspath(__file__)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ASCII LOGO
@@ -60,21 +64,6 @@ def get_ascii_logo_mono():
 # ═══════════════════════════════════════════════════════════════════════════════
 # COLOR SYSTEM
 # ═══════════════════════════════════════════════════════════════════════════════
-
-class Colors:
-    """ANSI color codes"""
-    RED = '\033[91m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    MAGENTA = '\033[95m'
-    CYAN = '\033[96m'
-    WHITE = '\033[97m'
-    BOLD = '\033[1m'
-    DIM = '\033[2m'
-    END = '\033[0m'
-    RAINBOW = ['\033[91m', '\033[93m', '\033[92m', '\033[96m', '\033[94m', '\033[95m']
-
 
 class ColorMode:
     """Manages color output modes"""
@@ -203,126 +192,6 @@ config = Config()
 # ═══════════════════════════════════════════════════════════════════════════════
 # USER AGENT ROTATION
 # ═══════════════════════════════════════════════════════════════════════════════
-
-USER_AGENTS = [
-    # Chrome on Windows (latest versions)
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    # Chrome on Mac
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    # Chrome on Linux
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    # Firefox (latest)
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.3; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    # Edge
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0',
-    # Safari
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-    # Mobile
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-]
-
-# Common referer URLs to appear as natural browser traffic
-REFERERS = [
-    'https://www.google.com/',
-    'https://www.bing.com/',
-    'https://duckduckgo.com/',
-    'https://search.yahoo.com/',
-    '',  # Direct navigation (no referer)
-]
-
-# Captcha and block indicators in response content
-CAPTCHA_INDICATORS = [
-    'captcha', 'recaptcha', 'hcaptcha', 'challenge-platform',
-    'are you a robot', 'are you human', 'verify you are human',
-    'unusual traffic', 'automated requests', 'bot detection',
-    'access denied', 'forbidden', 'rate limit exceeded',
-    'please verify', 'security check', 'blocked',
-    'cf-challenge', 'cf-browser-verification',
-]
-
-
-def get_random_headers():
-    """Get request headers with random User-Agent and realistic browser fingerprint"""
-    ua = random.choice(USER_AGENTS)
-    is_firefox = 'Firefox' in ua
-
-    headers = {
-        'User-Agent': ua,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8',
-        'Accept-Language': random.choice([
-            'en-US,en;q=0.9',
-            'en-US,en;q=0.9,es;q=0.8',
-            'en-GB,en;q=0.9,en-US;q=0.8',
-            'en-US,en;q=0.5',
-        ]),
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-    }
-
-    # Add Sec-Fetch headers (Chrome/Edge only, not Firefox)
-    if not is_firefox:
-        headers.update({
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'sec-ch-ua-platform': random.choice(['"Windows"', '"macOS"', '"Linux"']),
-        })
-
-    # Add referer sometimes (not always - real browsers don't always send one)
-    ref = random.choice(REFERERS)
-    if ref:
-        headers['Referer'] = ref
-
-    return headers
-
-
-def get_api_headers():
-    """Get headers specifically tuned for API requests (JSON-focused)"""
-    headers = get_random_headers()
-    headers['Accept'] = 'application/json, text/html, */*'
-    # Remove browser-navigation headers not appropriate for API calls
-    headers.pop('Upgrade-Insecure-Requests', None)
-    headers.pop('Sec-Fetch-Dest', None)
-    headers.pop('Sec-Fetch-Mode', None)
-    headers.pop('Sec-Fetch-Site', None)
-    headers.pop('Sec-Fetch-User', None)
-    return headers
-
-
-def detect_captcha(response):
-    """Check if a response contains captcha or block indicators.
-
-    Returns True if the response appears to be a captcha/block page
-    rather than legitimate search results.
-    """
-    # Check status codes that indicate blocking
-    if response.status_code in (403, 429, 503):
-        return True
-
-    # Check content type - captcha pages are usually HTML, not JSON
-    content_type = response.headers.get('Content-Type', '')
-    if 'application/json' in content_type:
-        return False  # JSON responses are legitimate API responses
-
-    # Check response body for captcha indicators
-    try:
-        body = response.text.lower()
-        for indicator in CAPTCHA_INDICATORS:
-            if indicator in body:
-                return True
-    except Exception:
-        pass
-
-    return False
 
 
 def create_session():
@@ -1033,32 +902,10 @@ def analyze_results(all_results, verbose=False):
 
 
 def deduplicate_results(all_results):
-    """Remove duplicate results across all format groups by URL.
+    """Remove duplicate results across all format groups by URL."""
+    from telespot_common.dedupe import deduplicate_results_dict
 
-    Keeps the first occurrence (with the most complete data) and removes
-    later duplicates. This prevents inflated result counts and improves
-    pattern analysis accuracy.
-
-    Returns a new dict with the same format-keyed structure but deduplicated.
-    """
-    seen_urls = set()
-    deduped = {}
-
-    for fmt, results in all_results.items():
-        unique_results = []
-        for result in results:
-            url = result.get('url', '').rstrip('/')
-            # Normalize URL for comparison (strip trailing slash, lowercase)
-            normalized = url.lower().strip()
-            if normalized and normalized not in seen_urls:
-                seen_urls.add(normalized)
-                unique_results.append(result)
-            elif not normalized:
-                # Keep results without URLs (e.g., some DuckDuckGo results)
-                unique_results.append(result)
-        deduped[fmt] = unique_results
-
-    return deduped
+    return deduplicate_results_dict(all_results)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # OUTPUT FUNCTIONS

@@ -1,7 +1,7 @@
 # Telespot Requirements
 # Install with: pip install -r requirements.txt
 
-requests>=2.25.0
+requests>=2.32.5
 
 # Optional: For telespotx.py (fast parallel mode)
-httpx>=0.24.0
+httpx>=0.28.1
