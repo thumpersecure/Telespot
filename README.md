@@ -1,5 +1,8 @@
 <div align="center">
 
+<!-- Social preview -->
+<img src="og-preview.png" alt="TeleSpot — Phone Number OSINT in Python" width="100%" />
+
 # 📞 telespot
 
 ```
@@ -18,7 +21,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/thumpersecure/Telespot?style=for-the-badge&logo=github)](https://github.com/thumpersecure/Telespot/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/thumpersecure/Telespot?style=for-the-badge&logo=github)](https://github.com/thumpersecure/Telespot/network)
 
-**Telespot** is a powerful Python-based OSINT tool that investigates phone numbers across multiple search engines. It generates format variations and correlates results to surface **names**, **locations**, and **usernames**.
+**Telespot** is a powerful Python-based OSINT tool that investigates phone numbers across multiple search engines. It searches each number in **10 format variations** and correlates results to surface **names**, **locations**, and **usernames**.
 
 [Getting Started](#-quick-start) •
 [Features](#-features) •
