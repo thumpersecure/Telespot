@@ -14,7 +14,7 @@ Run the interactive wizard:
 | API | Required | Free Tier | Purpose |
 |-----|----------|-----------|---------|
 | Google Custom Search | Recommended | 100/day | Best results |
-| Bing Search | Recommended | 1,000/month | Good backup |
+| Brave Search | Recommended | ~2,000/month | Good backup |
 | DuckDuckGo | Built-in | Unlimited | Always works |
 | Dehashed | Optional | Paid | Breach data |
 
@@ -52,34 +52,25 @@ Run the interactive wizard:
 
 ---
 
-## 2. Bing Search API (Azure)
+## 2. Brave Search API
 
-**Free tier:** 1,000 searches/month
+**Free tier:** ~2,000 queries/month
 
-### Step 1: Create Azure Account
-1. Go to [Azure Portal](https://portal.azure.com/)
-2. Sign up for a free account (if needed)
+> Note: This replaced the Bing Search API, which Microsoft retired
+> (api.bing.microsoft.com/v7.0/search) in August 2025.
 
-### Step 2: Create Bing Search Resource
-1. Click **Create a resource**
-2. Search for "Bing Search v7"
-3. Click **Create**
-4. Fill in:
-   - Subscription: Your subscription
-   - Resource group: Create new or select existing
-   - Name: Any name (e.g., "telespot-bing")
-   - Pricing tier: **F1** (Free - 1,000 calls/month)
-5. Click **Review + Create** → **Create**
+### Step 1: Create a Brave Search API Account
+1. Go to [Brave Search API](https://api.search.brave.com/)
+2. Sign up and subscribe to the **Data for Search** plan (free tier available)
 
-### Step 3: Get API Key
-1. Go to your Bing Search resource
-2. Click **Keys and Endpoint**
-3. Copy **Key 1** or **Key 2**
+### Step 2: Get the Subscription Token
+1. Open your API dashboard
+2. Copy the **subscription token** (used as the `X-Subscription-Token` header)
 
-### Step 4: Add to telespot
+### Step 3: Add to telespot
 ```bash
 ./telespot.py --setup
-# Enter your Bing API Key
+# Enter your Brave API Key
 ```
 
 ---
@@ -105,13 +96,12 @@ Note: Results are limited to instant answers and related topics, not full web se
 ### Step 2: Get API Key
 1. Log into Dehashed
 2. Go to your account settings
-3. Find your API credentials
-4. Format: `email:api_key`
+3. Copy your **v2 API key** (raw key; a legacy `email:key` value is also accepted)
 
 ### Step 3: Add to telespot
 ```bash
 ./telespot.py --setup
-# Enter: your_email@example.com:your_api_key
+# Enter your Dehashed v2 API key
 ```
 
 ### Usage
@@ -133,7 +123,7 @@ Output:
 API Configuration Status:
 ----------------------------------------
   [+] Google: CONFIGURED
-  [+] Bing: CONFIGURED
+  [+] Brave: CONFIGURED
   [+] DuckDuckGo: CONFIGURED
   [-] Dehashed: NOT CONFIGURED
 ----------------------------------------
@@ -153,11 +143,11 @@ API keys are stored in `.telespot_config`:
 google_api_key=AIzaSy...
 google_cse_id=017576...
 
-# Bing Search API (Azure)
-bing_api_key=a1b2c3...
+# Brave Search API
+brave_api_key=BSA...
 
 # Dehashed API (optional)
-dehashed_api_key=email@example.com:key123
+dehashed_api_key=your_dehashed_v2_key
 
 # Settings
 default_country_code=+1
@@ -173,20 +163,19 @@ delay_seconds=2
 ### "Google API quota exceeded"
 - Free tier: 100 queries/day
 - Resets at midnight UTC
-- Use Bing as backup
+- Use Brave as backup
 
-### "Bing API key invalid"
-- Verify key in Azure portal
-- Check if resource is still active
-- Ensure you're using Bing Search v7
+### "Brave API key invalid"
+- Verify the subscription token in the Brave API dashboard
+- Check that your plan is still active
 
 ### "No results from DuckDuckGo"
 - DuckDuckGo returns instant answers only
 - Works better for well-known topics
-- Use Google/Bing for comprehensive results
+- Use Google/Brave for comprehensive results
 
 ### "Dehashed API error"
-- Check your API key format (email:key)
+- Ensure you are using a Dehashed v2 API key
 - Verify account has credits
 - Check Dehashed service status
 
@@ -197,7 +186,7 @@ delay_seconds=2
 | API | Limit | Reset |
 |-----|-------|-------|
 | Google | 100/day | Midnight UTC |
-| Bing | 1,000/month | Monthly |
+| Brave | ~2,000/month | Monthly |
 | DuckDuckGo | None | N/A |
 | Dehashed | Based on plan | N/A |
 
@@ -205,7 +194,7 @@ delay_seconds=2
 
 ## Best Practices
 
-1. **Start with Google + Bing** - Best coverage
+1. **Start with Google + Brave** - Best coverage
 2. **Keep DuckDuckGo enabled** - Free backup
 3. **Use Dehashed sparingly** - Save for important searches
 4. **Monitor usage** - Check API dashboards regularly

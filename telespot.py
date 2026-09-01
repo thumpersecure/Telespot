@@ -3,7 +3,7 @@
 telespot - Phone Number OSINT Tool
 Version 5.0.0
 
-API-based phone number search across Google, Bing, and DuckDuckGo
+API-based phone number search across Google, Brave, and DuckDuckGo
 with pattern recognition for names, locations, and usernames.
 """
 
@@ -23,6 +23,12 @@ from urllib.parse import quote_plus
 from telespot_common.colors import Colors
 from telespot_common.config import resolve_config_path
 from telespot_common.http_fingerprint import detect_captcha, get_api_headers, get_random_headers
+from telespot_common.patterns import (
+    US_STATES,
+    extract_locations,
+    extract_names,
+    extract_usernames,
+)
 
 VERSION = "5.0.0"
 REPO_URL = "https://github.com/thumpersecure/Telespot"
@@ -116,7 +122,7 @@ class Config:
     DEFAULT = {
         'google_api_key': '',
         'google_cse_id': '',
-        'bing_api_key': '',
+        'brave_api_key': '',
         'dehashed_api_key': '',
         'default_country_code': '+1',
         'delay_seconds': '2',
@@ -146,8 +152,8 @@ class Config:
                 f.write("# Google Custom Search API\n")
                 f.write(f"google_api_key={self.settings.get('google_api_key', '')}\n")
                 f.write(f"google_cse_id={self.settings.get('google_cse_id', '')}\n\n")
-                f.write("# Bing Search API (Azure)\n")
-                f.write(f"bing_api_key={self.settings.get('bing_api_key', '')}\n\n")
+                f.write("# Brave Search API (free tier ~2000/mo)\n")
+                f.write(f"brave_api_key={self.settings.get('brave_api_key', '')}\n\n")
                 f.write("# Dehashed API (optional)\n")
                 f.write(f"dehashed_api_key={self.settings.get('dehashed_api_key', '')}\n\n")
                 f.write("# Settings\n")
@@ -168,7 +174,7 @@ class Config:
     def get_api_status(self):
         return {
             'Google': bool(self.settings.get('google_api_key') and self.settings.get('google_cse_id')),
-            'Bing': bool(self.settings.get('bing_api_key')),
+            'Brave': bool(self.settings.get('brave_api_key')),
             'DuckDuckGo': True,  # Always available (no API key needed)
             'Dehashed': bool(self.settings.get('dehashed_api_key')),
         }
@@ -233,12 +239,19 @@ def request_with_retry(method, url, max_retries=3, backoff_base=2.0, debug=False
 
     for attempt in range(max_retries + 1):
         try:
-            # Use fresh headers on each retry to vary fingerprint
+            # Use fresh fingerprint headers on each retry to vary fingerprint,
+            # but MERGE them under any caller-supplied headers so auth headers
+            # (Brave subscription key, Dehashed API key, etc.) survive retries.
             if 'headers' not in kwargs or attempt > 0:
                 if kwargs.get('_api_mode'):
-                    kwargs['headers'] = get_api_headers()
+                    fresh = get_api_headers()
                 else:
-                    kwargs['headers'] = get_random_headers()
+                    fresh = get_random_headers()
+                caller_headers = kwargs.get('headers') or {}
+                # Caller headers win over fresh fingerprint headers.
+                merged = dict(fresh)
+                merged.update(caller_headers)
+                kwargs['headers'] = merged
             kwargs.pop('_api_mode', None)
 
             if 'timeout' not in kwargs:
@@ -363,21 +376,7 @@ def rate_limit():
 # US STATES AND LOCATION DATA
 # ═══════════════════════════════════════════════════════════════════════════════
 
-US_STATES = {
-    'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas',
-    'CA': 'California', 'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware',
-    'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii', 'ID': 'Idaho',
-    'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas',
-    'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
-    'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi',
-    'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada',
-    'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
-    'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma',
-    'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
-    'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah',
-    'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia',
-    'WI': 'Wisconsin', 'WY': 'Wyoming', 'DC': 'District of Columbia'
-}
+# US_STATES is imported from telespot_common.patterns (shared with telespotx).
 
 COUNTRY_CODES = {
     '+1': 'USA/Canada', '+44': 'United Kingdom', '+49': 'Germany',
@@ -467,22 +466,20 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
     try:
         url = "https://www.googleapis.com/customsearch/v1"
 
-        # Handle quoted queries - use exactTerms parameter for better results
-        clean_query = query
-        exact_terms = None
-        if query.startswith('"') and query.endswith('"'):
-            clean_query = query[1:-1]
-            exact_terms = clean_query
-
+        # Google CSE honors quoted phrases natively inside `q`, so pass the
+        # query (quotes and all) straight through. Only use exactTerms for the
+        # bare digits-only format, where it usefully narrows without the
+        # over-filtering that a quoted phone format triggers.
         params = {
             'key': api_key,
             'cx': cse_id,
-            'q': clean_query,
+            'q': query,
             'num': min(num_results, 10),
         }
 
-        if exact_terms:
-            params['exactTerms'] = exact_terms
+        digits_only = re.sub(r'\D', '', query)
+        if query.strip() == digits_only and digits_only:
+            params['exactTerms'] = digits_only
 
         response, was_blocked = request_with_retry(
             'get', url, params=params, _api_mode=True, debug=debug
@@ -524,23 +521,28 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
     return results
 
 
-def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False, rate_limiter=None):
-    """Search using Bing Search API (Azure Cognitive Services) with retry and captcha detection"""
+def search_brave_api(query, api_key, num_results=10, verbose=False, debug=False, rate_limiter=None):
+    """Search using the Brave Search API with retry and captcha detection.
+
+    Replaces the retired Bing Search API (Microsoft shut down
+    api.bing.microsoft.com/v7.0/search in Aug 2025). Brave's free tier allows
+    ~2000 queries/month. Requires the X-Subscription-Token header.
+    """
     results = []
 
     if not api_key:
         if debug:
-            print("    [DEBUG] Bing API not configured")
+            print("    [DEBUG] Brave API not configured")
         return results
 
     try:
-        url = "https://api.bing.microsoft.com/v7.0/search"
+        url = "https://api.search.brave.com/res/v1/web/search"
         headers = get_api_headers()
-        headers['Ocp-Apim-Subscription-Key'] = api_key
+        headers['X-Subscription-Token'] = api_key
+        headers['Accept'] = 'application/json'
         params = {
             'q': query,
-            'count': num_results,
-            'mkt': 'en-US',
+            'count': min(num_results, 20),
         }
 
         response, was_blocked = request_with_retry(
@@ -550,37 +552,37 @@ def search_bing_api(query, api_key, num_results=10, verbose=False, debug=False, 
         if was_blocked:
             if rate_limiter:
                 rate_limiter.record_block()
-            print(f"    {color.warning('Bing API blocked/rate limited - backing off')}")
+            print(f"    {color.warning('Brave API blocked/rate limited - backing off')}")
             return results
 
         if debug:
-            print(f"    [DEBUG] Bing API status: {response.status_code}")
+            print(f"    [DEBUG] Brave API status: {response.status_code}")
 
         if response.status_code == 200:
             data = response.json()
-            for item in data.get('webPages', {}).get('value', []):
+            for item in data.get('web', {}).get('results', []):
                 results.append({
-                    'title': item.get('name', ''),
+                    'title': item.get('title', ''),
                     'url': item.get('url', ''),
-                    'snippet': item.get('snippet', ''),
-                    'source': 'Bing'
+                    'snippet': item.get('description', ''),
+                    'source': 'Brave'
                 })
                 if verbose:
-                    print(f"      Found: {item.get('name', '')[:60]}...")
+                    print(f"      Found: {item.get('title', '')[:60]}...")
             if rate_limiter:
                 rate_limiter.record_success()
         elif response.status_code == 401:
-            print(f"    {color.warning('Bing API key invalid')}")
+            print(f"    {color.warning('Brave API key invalid')}")
         elif response.status_code == 429:
-            print(f"    {color.warning('Bing API quota exceeded')}")
+            print(f"    {color.warning('Brave API quota exceeded')}")
             if rate_limiter:
                 rate_limiter.record_block()
         elif debug:
-            print(f"    [DEBUG] Bing error: {response.text[:100]}")
+            print(f"    [DEBUG] Brave error: {response.text[:100]}")
 
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] Bing exception: {e}")
+            print(f"    [DEBUG] Brave exception: {e}")
 
     return results
 
@@ -675,11 +677,14 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
     results = []
 
     try:
-        url = "https://html.duckduckgo.com/html/"
-        data = {'q': query, 'b': ''}
+        # The lite endpoint (GET with q=) is far more scrape-friendly than
+        # the old html.duckduckgo.com POST form, which stopped returning the
+        # result__a/result__snippet markup to non-browser clients.
+        url = "https://lite.duckduckgo.com/lite/"
+        params = {'q': query}
 
         response, was_blocked = request_with_retry(
-            'post', url, data=data, max_retries=2, debug=debug
+            'get', url, params=params, max_retries=2, debug=debug
         )
 
         if was_blocked:
@@ -692,13 +697,21 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
         if response and response.status_code == 200:
             body = response.text
 
-            # Parse result links: <a rel="nofollow" class="result__a" href="...">title</a>
-            link_pattern = r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>'
+            # lite endpoint markup (single-quoted class attributes):
+            #   <a rel="nofollow" href="...uddg=..." class='result-link'>title</a>
+            #   <td class='result-snippet'>snippet text</td>
+            link_pattern = r"<a[^>]*href=\"([^\"]*)\"[^>]*class=['\"]result-link['\"][^>]*>(.*?)</a>"
             links = re.findall(link_pattern, body, re.DOTALL)
 
-            # Parse snippets: <a class="result__snippet" ...>snippet text</a>
-            snippet_pattern = r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>'
+            snippet_pattern = r"<td[^>]*class=['\"]result-snippet['\"][^>]*>(.*?)</td>"
             snippets = re.findall(snippet_pattern, body, re.DOTALL)
+
+            if not links:
+                # Silent breakage guard: 200 OK but nothing parsed usually
+                # means DDG changed its markup again. Warn, don't swallow it.
+                print(f"    {color.warning('DuckDuckGo HTML: 200 OK but 0 results parsed (selectors may be stale)')}")
+                if debug:
+                    print(f"    [DEBUG] response body length={len(body)}")
 
             for i, (href, title) in enumerate(links[:num_results]):
                 # Clean HTML tags from title and snippet
@@ -745,14 +758,20 @@ def search_dehashed_api(query, api_key, verbose=False, debug=False, rate_limiter
         return results
 
     try:
-        url = "https://api.dehashed.com/search"
-        params = {'query': f'phone:"{query}"'}
+        # Dehashed v2: POST JSON to /v2/search with a Dehashed-Api-Key header.
+        # The v1 GET + basic-auth endpoint is retired. The API key is just the
+        # raw key now; tolerate a legacy "email:key" value by taking the key
+        # part after the colon.
+        url = "https://api.dehashed.com/v2/search"
+        raw_key = api_key.split(':', 1)[1] if ':' in api_key else api_key
         headers = get_api_headers()
         headers['Accept'] = 'application/json'
-        auth = (api_key.split(':')[0], api_key.split(':')[1]) if ':' in api_key else (api_key, '')
+        headers['Content-Type'] = 'application/json'
+        headers['Dehashed-Api-Key'] = raw_key
+        payload = {'query': f'phone:"{query}"'}
 
         response, was_blocked = request_with_retry(
-            'get', url, params=params, headers=headers, auth=auth, debug=debug
+            'post', url, json=payload, headers=headers, debug=debug
         )
 
         if was_blocked:
@@ -766,12 +785,24 @@ def search_dehashed_api(query, api_key, verbose=False, debug=False, rate_limiter
 
         if response.status_code == 200:
             data = response.json()
+
+            def _flatten(v, default=''):
+                # v2 returns most fields as lists of strings.
+                if isinstance(v, list):
+                    return ' '.join(str(x) for x in v) if v else default
+                return v if v else default
+
             for entry in data.get('entries', [])[:10]:
-                name = f"{entry.get('name', '')} {entry.get('username', '')}".strip()
+                # v2: 'name' (and other fields) are now lists, not strings.
+                raw_name = _flatten(entry.get('name', ''))
+                raw_username = _flatten(entry.get('username', ''))
+                email = _flatten(entry.get('email', ''), 'N/A')
+                database = _flatten(entry.get('database_name', ''), 'N/A')
+                name = f"{raw_name} {raw_username}".strip()
                 results.append({
                     'title': name or 'Dehashed Entry',
-                    'url': entry.get('database_name', ''),
-                    'snippet': f"Email: {entry.get('email', 'N/A')} | Database: {entry.get('database_name', 'N/A')}",
+                    'url': database if database != 'N/A' else '',
+                    'snippet': f"Email: {email} | Database: {database}",
                     'source': 'Dehashed'
                 })
                 if verbose:
@@ -793,63 +824,8 @@ def search_dehashed_api(query, api_key, verbose=False, debug=False, rate_limiter
 # PATTERN EXTRACTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def extract_names(text):
-    """Extract potential names from text"""
-    name_pattern = r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b'
-    names = re.findall(name_pattern, text)
-
-    excluded = {
-        'Phone', 'Number', 'Call', 'Contact', 'Email', 'Address',
-        'Street', 'City', 'State', 'Country', 'The', 'This', 'That',
-        'Search', 'Results', 'View', 'More', 'Less', 'Show', 'Hide',
-        'United States', 'New York', 'Los Angeles', 'San Francisco',
-        'Google', 'Bing', 'Yahoo', 'Facebook', 'Twitter', 'Instagram',
-        'Best', 'Top', 'Free', 'Online', 'Reviews', 'About', 'Home',
-        'Business', 'Service', 'Services', 'Company', 'Companies',
-        'True People', 'White Pages', 'Fast People', 'People Search',
-        'Phone Number', 'Reverse Phone', 'Phone Lookup', 'Cell Phone',
-    }
-
-    return [n for n in names if n not in excluded and len(n.split()) >= 2]
-
-
-def extract_locations(text):
-    """Extract potential locations from text"""
-    locations = []
-
-    # State abbreviations
-    state_pattern = r'\b(' + '|'.join(US_STATES.keys()) + r')\b'
-    locations.extend(re.findall(state_pattern, text))
-
-    # City, State combinations
-    city_state_pattern = r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),?\s+(' + '|'.join(US_STATES.keys()) + r')\b'
-    for city, state in re.findall(city_state_pattern, text):
-        locations.append(f"{city}, {state}")
-
-    # Full state names
-    for abbr, full_name in US_STATES.items():
-        if full_name in text:
-            locations.append(full_name)
-
-    # Zip codes
-    locations.extend(re.findall(r'\b\d{5}(?:-\d{4})?\b', text))
-
-    return list(set(locations))
-
-
-def extract_usernames(text):
-    """Extract potential usernames from text and URLs"""
-    usernames = []
-
-    # @username pattern
-    usernames.extend(re.findall(r'@([A-Za-z0-9_]{3,20})', text))
-
-    # URL path usernames (e.g., facebook.com/username)
-    url_pattern = r'(?:facebook|twitter|instagram|linkedin)\.com/([A-Za-z0-9_.-]{3,30})'
-    usernames.extend(re.findall(url_pattern, text, re.IGNORECASE))
-
-    excluded = {'search', 'profile', 'user', 'pages', 'groups', 'photos', 'videos'}
-    return list(set(u for u in usernames if u.lower() not in excluded))
+# extract_names / extract_locations / extract_usernames are imported from
+# telespot_common.patterns (shared, canonical implementations).
 
 
 def analyze_results(all_results, verbose=False):
@@ -1104,23 +1080,23 @@ def interactive_setup():
     if cse:
         config.set('google_cse_id', cse)
 
-    # Bing
-    print(color.info("\nBing Search API (Azure Cognitive Services)"))
-    print("  Get key at: https://portal.azure.com/")
-    print("  1. Create 'Bing Search v7' resource")
-    print("  2. Copy the API key")
+    # Brave
+    print(color.info("\nBrave Search API (free tier ~2000 queries/month)"))
+    print("  Get key at: https://api.search.brave.com/")
+    print("  1. Sign up for the Data for Search API")
+    print("  2. Copy the subscription token")
 
-    current_bing = config.get('bing_api_key', '')
-    masked = f"[{current_bing[:8]}...]" if len(current_bing) > 8 else "[not set]"
-    print(f"\n  Current Bing Key: {masked}")
-    bing = input("  Enter Bing API Key (or Enter to skip): ").strip()
-    if bing:
-        config.set('bing_api_key', bing)
+    current_brave = config.get('brave_api_key', '')
+    masked = f"[{current_brave[:8]}...]" if len(current_brave) > 8 else "[not set]"
+    print(f"\n  Current Brave Key: {masked}")
+    brave = input("  Enter Brave API Key (or Enter to skip): ").strip()
+    if brave:
+        config.set('brave_api_key', brave)
 
     # Dehashed
     print(color.info("\nDehashed API (optional - for breach database search)"))
-    print("  Get key at: https://www.dehashed.com/")
-    print("  Format: email:api_key")
+    print("  Get key at: https://www.dehashed.com/ (v2 API)")
+    print("  Format: your raw API key (legacy email:key is also accepted)")
 
     current_dh = config.get('dehashed_api_key', '')
     masked = f"[{current_dh[:8]}...]" if len(current_dh) > 8 else "[not set]"
@@ -1221,7 +1197,7 @@ def run_search(phone_number, args):
     # Get API keys
     google_key = config.get('google_api_key', '')
     google_cse = config.get('google_cse_id', '')
-    bing_key = config.get('bing_api_key', '')
+    brave_key = config.get('brave_api_key', '')
     dehashed_key = config.get('dehashed_api_key', '')
 
     # Initialize adaptive rate limiter
@@ -1254,10 +1230,10 @@ def run_search(phone_number, args):
             print(f"({len(results)} results)")
             time.sleep(1)
 
-        # Bing API
-        if bing_key:
-            print(f"  -> Bing API...", end=' ', flush=True)
-            results = search_bing_api(query, bing_key, 10, args.verbose, args.debug, limiter)
+        # Brave API
+        if brave_key:
+            print(f"  -> Brave API...", end=' ', flush=True)
+            results = search_brave_api(query, brave_key, 10, args.verbose, args.debug, limiter)
             format_results.extend(results)
             print(f"({len(results)} results)")
             time.sleep(1)
@@ -1366,7 +1342,7 @@ def create_parser():
 ╔══════════════════════════════════════════════════════════════════╗
 ║  telespot v{VERSION} - Phone Number OSINT Tool                     ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  API-based search across Google, Bing, and DuckDuckGo with      ║
+║  API-based search across Google, Brave, and DuckDuckGo with     ║
 ║  pattern recognition for names, locations, and usernames.        ║
 ╚══════════════════════════════════════════════════════════════════╝
 ''',
@@ -1382,12 +1358,12 @@ EXAMPLES:
 
 API SETUP:
   Run 'telespot --setup' to configure your API keys.
-  At minimum, configure Google or Bing for best results.
+  At minimum, configure Google or Brave for best results.
   DuckDuckGo works without an API key.
 
 SEARCH ENGINES:
   • Google Custom Search API (requires API key + CSE ID)
-  • Bing Search API (requires Azure API key)
+  • Brave Search API (requires subscription token; free tier ~2000/mo)
   • DuckDuckGo Instant Answer API (no key required)
   • Dehashed (optional, requires API key)
 
@@ -1491,7 +1467,7 @@ def main():
     try:
         result = run_search(phone_number, args)
 
-        if result and not args.output:
+        if result and not args.output and sys.stdin.isatty():
             save = input("\nSave results to file? (y/N): ").strip().lower()
             if save == 'y':
                 fmt = input("Format (txt/json) [txt]: ").strip().lower() or 'txt'

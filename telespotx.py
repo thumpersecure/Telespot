@@ -27,6 +27,12 @@ except ImportError:
 from telespot_common.colors import Colors
 from telespot_common.config import read_simple_kv_config, resolve_config_path
 from telespot_common.http_fingerprint import detect_captcha, get_api_headers, get_random_headers
+from telespot_common.patterns import (
+    extract_emails,
+    extract_locations,
+    extract_names,
+    extract_usernames,
+)
 
 # Version
 VERSION = "0.3.0"
@@ -64,7 +70,7 @@ def load_config():
     defaults = {
         "google_api_key": "",
         "google_cse_id": "",
-        "bing_api_key": "",
+        "brave_api_key": "",
         "dehashed_api_key": "",
         "default_country_code": "+1",
     }
@@ -109,7 +115,7 @@ def print_api_status(config, no_color=False):
 
     apis = [
         ('Google', bool(config.get('google_api_key') and config.get('google_cse_id'))),
-        ('Bing', bool(config.get('bing_api_key'))),
+        ('Brave', bool(config.get('brave_api_key'))),
         ('DuckDuckGo', True),
         ('Dehashed', bool(config.get('dehashed_api_key'))),
     ]
@@ -193,21 +199,19 @@ async def search_google(client, query, config, debug=False):
 
     url = "https://www.googleapis.com/customsearch/v1"
 
-    clean_query = query
-    exact_terms = None
-    if query.startswith('"') and query.endswith('"'):
-        clean_query = query[1:-1]
-        exact_terms = clean_query
-
+    # Google CSE honors quoted phrases natively in `q`, so pass the query
+    # through unchanged. Only use exactTerms for the bare digits-only format
+    # (quoted phone formats over-filter to near-zero when forced via exactTerms).
     params = {
         'key': api_key,
         'cx': cse_id,
-        'q': clean_query,
+        'q': query,
         'num': 10,
     }
 
-    if exact_terms:
-        params['exactTerms'] = exact_terms
+    digits_only = re.sub(r'\D', '', query)
+    if query.strip() == digits_only and digits_only:
+        params['exactTerms'] = digits_only
 
     try:
         response, was_blocked = await async_request_with_retry(
@@ -237,16 +241,22 @@ async def search_google(client, query, config, debug=False):
             print(f"    [DEBUG] Google error: {e}")
     return []
 
-async def search_bing(client, query, config, debug=False):
-    """Search using Bing Search API with retry."""
-    api_key = config.get('bing_api_key')
+async def search_brave(client, query, config, debug=False):
+    """Search using the Brave Search API with retry.
+
+    Replaces the retired Bing Search API (api.bing.microsoft.com/v7.0/search,
+    shut down Aug 2025). Brave free tier ~2000 queries/month; needs the
+    X-Subscription-Token header.
+    """
+    api_key = config.get('brave_api_key')
 
     if not api_key:
         return []
 
-    url = "https://api.bing.microsoft.com/v7.0/search"
+    url = "https://api.search.brave.com/res/v1/web/search"
     headers = get_api_headers()
-    headers['Ocp-Apim-Subscription-Key'] = api_key
+    headers['X-Subscription-Token'] = api_key
+    headers['Accept'] = 'application/json'
     params = {'q': query, 'count': 10}
 
     try:
@@ -256,25 +266,25 @@ async def search_bing(client, query, config, debug=False):
 
         if was_blocked:
             if debug:
-                print(f"    [DEBUG] Bing blocked/rate limited")
+                print(f"    [DEBUG] Brave blocked/rate limited")
             return []
 
         if response.status_code == 200:
             data = response.json()
             results = []
-            for item in data.get('webPages', {}).get('value', []):
+            for item in data.get('web', {}).get('results', []):
                 results.append({
-                    'title': item.get('name', ''),
+                    'title': item.get('title', ''),
                     'url': item.get('url', ''),
-                    'snippet': item.get('snippet', ''),
-                    'source': 'Bing'
+                    'snippet': item.get('description', ''),
+                    'source': 'Brave'
                 })
             if debug:
-                print(f"    [DEBUG] Bing returned {len(results)} results")
+                print(f"    [DEBUG] Brave returned {len(results)} results")
             return results
     except Exception as e:
         if debug:
-            print(f"    [DEBUG] Bing error: {e}")
+            print(f"    [DEBUG] Brave error: {e}")
     return []
 
 async def search_duckduckgo(client, query, debug=False):
@@ -335,11 +345,14 @@ async def _search_duckduckgo_html(client, query, debug=False):
     results = []
 
     try:
-        url = "https://html.duckduckgo.com/html/"
-        data = {'q': query, 'b': ''}
+        # lite endpoint (GET) is more scrape-friendly than the old
+        # html.duckduckgo.com POST form, which no longer returns the
+        # result__a/result__snippet markup to non-browser clients.
+        url = "https://lite.duckduckgo.com/lite/"
+        params = {'q': query}
 
         response, was_blocked = await async_request_with_retry(
-            client, 'post', url, data=data, max_retries=1, debug=debug
+            client, 'get', url, params=params, max_retries=1, debug=debug
         )
 
         if was_blocked:
@@ -350,11 +363,18 @@ async def _search_duckduckgo_html(client, query, debug=False):
         if response and response.status_code == 200:
             body = response.text
 
-            link_pattern = r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>'
+            # lite markup (single-quoted class attrs):
+            #   <a rel="nofollow" href="...uddg=..." class='result-link'>title</a>
+            #   <td class='result-snippet'>snippet</td>
+            link_pattern = r"<a[^>]*href=\"([^\"]*)\"[^>]*class=['\"]result-link['\"][^>]*>(.*?)</a>"
             links = re.findall(link_pattern, body, re.DOTALL)
 
-            snippet_pattern = r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>'
+            snippet_pattern = r"<td[^>]*class=['\"]result-snippet['\"][^>]*>(.*?)</td>"
             snippets = re.findall(snippet_pattern, body, re.DOTALL)
+
+            if not links:
+                # 200 OK but nothing parsed => markup likely changed. Warn loudly.
+                print("    Warning: DuckDuckGo HTML returned 200 but 0 results parsed (selectors may be stale)")
 
             for i, (href, title) in enumerate(links[:10]):
                 clean_title = re.sub(r'<[^>]+>', '', title).strip()
@@ -386,21 +406,36 @@ async def _search_duckduckgo_html(client, query, debug=False):
     return results
 
 
+def _flatten_field(v, default=''):
+    """Dehashed v2 returns most fields as lists of strings; flatten to str."""
+    if isinstance(v, list):
+        return ' '.join(str(x) for x in v) if v else default
+    return v if v else default
+
+
 async def search_dehashed(client, query, config, debug=False):
-    """Search using Dehashed API with retry."""
+    """Search using the Dehashed v2 API with retry.
+
+    v2: POST JSON to /v2/search with a Dehashed-Api-Key header (v1 GET +
+    basic-auth is retired). Response 'name'/'username'/'email' are now lists.
+    """
     api_key = config.get('dehashed_api_key')
 
-    if not api_key or ':' not in api_key:
+    if not api_key:
         return []
 
-    email, key = api_key.split(':', 1)
-    url = "https://api.dehashed.com/search"
-    params = {'query': f'phone:"{query}"'}
+    # v2 uses the raw key; tolerate a legacy "email:key" value.
+    raw_key = api_key.split(':', 1)[1] if ':' in api_key else api_key
+    url = "https://api.dehashed.com/v2/search"
+    headers = get_api_headers()
+    headers['Accept'] = 'application/json'
+    headers['Content-Type'] = 'application/json'
+    headers['Dehashed-Api-Key'] = raw_key
+    payload = {'query': f'phone:"{query}"'}
 
     try:
         response, was_blocked = await async_request_with_retry(
-            client, 'get', url, params=params, auth=(email, key),
-            _api_mode=True, debug=debug
+            client, 'post', url, json=payload, headers=headers, debug=debug
         )
 
         if was_blocked:
@@ -412,10 +447,13 @@ async def search_dehashed(client, query, config, debug=False):
             data = response.json()
             results = []
             for entry in data.get('entries', [])[:10]:
+                email = _flatten_field(entry.get('email', ''), 'N/A')
+                username = _flatten_field(entry.get('username', ''), 'N/A')
+                name = _flatten_field(entry.get('name', ''), 'N/A')
                 results.append({
-                    'title': f"Dehashed: {entry.get('email', 'Unknown')}",
+                    'title': f"Dehashed: {email}",
                     'url': 'https://dehashed.com',
-                    'snippet': f"Email: {entry.get('email', 'N/A')}, Username: {entry.get('username', 'N/A')}, Name: {entry.get('name', 'N/A')}",
+                    'snippet': f"Email: {email}, Username: {username}, Name: {name}",
                     'source': 'Dehashed'
                 })
             if debug:
@@ -430,7 +468,7 @@ async def search_format(client, query, config, include_dehashed=False, debug=Fal
     """Search all APIs in parallel for a single format."""
     tasks = [
         search_google(client, query, config, debug),
-        search_bing(client, query, config, debug),
+        search_brave(client, query, config, debug),
         search_duckduckgo(client, query, debug),
     ]
 
@@ -517,7 +555,14 @@ async def search_all_formats(phone, config, keyword=None, site=None,
     return all_results
 
 def extract_patterns(results):
-    """Extract names, locations, and usernames from results."""
+    """Extract names, locations, usernames, and emails from results.
+
+    Uses the shared, canonical extractors in telespot_common.patterns so
+    telespot.py and telespotx.py behave identically. This replaces the old
+    local regexes here, which were broken: the location regex made everything
+    after the first group optional (matching ANY single capitalized word), and
+    names were filtered by raw char length (>5) instead of word count.
+    """
     patterns = {
         'names': {},
         'locations': {},
@@ -525,26 +570,20 @@ def extract_patterns(results):
         'emails': {},
     }
 
-    name_pattern = re.compile(r'\b([A-Z][a-z]+ [A-Z][a-z]+)\b')
-    location_pattern = re.compile(r'\b([A-Z][a-z]+(?:,?\s+[A-Z]{2})?(?:\s+\d{5})?)\b')
-    username_pattern = re.compile(r'@([A-Za-z0-9_]{3,20})')
-    email_pattern = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
-
     for result in results:
         text = f"{result.get('title', '')} {result.get('snippet', '')}"
 
-        for name in name_pattern.findall(text):
-            if len(name) > 5:
-                patterns['names'][name] = patterns['names'].get(name, 0) + 1
+        for name in extract_names(text):
+            patterns['names'][name] = patterns['names'].get(name, 0) + 1
 
-        for loc in location_pattern.findall(text):
-            if len(loc) > 3:
-                patterns['locations'][loc] = patterns['locations'].get(loc, 0) + 1
+        for loc in extract_locations(text):
+            patterns['locations'][loc] = patterns['locations'].get(loc, 0) + 1
 
-        for user in username_pattern.findall(text):
-            patterns['usernames'][f"@{user}"] = patterns['usernames'].get(f"@{user}", 0) + 1
+        for user in extract_usernames(text):
+            key = f"@{user}"
+            patterns['usernames'][key] = patterns['usernames'].get(key, 0) + 1
 
-        for email in email_pattern.findall(text):
+        for email in extract_emails(text):
             patterns['emails'][email] = patterns['emails'].get(email, 0) + 1
 
     # Calculate confidence

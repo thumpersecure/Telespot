@@ -14,7 +14,7 @@
 *                    |_|    *   v5.0.0
 ```
 
-[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=00D9FF&center=true&vCenter=true&width=435&lines=Phone+Number+OSINT+Tool;Search+Google%2C+Bing%2C+DuckDuckGo;Pattern+Analysis+%26+Confidence+Scoring;Find+Names%2C+Locations%2C+Usernames)](https://github.com/thumpersecure/Telespot)
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=00D9FF&center=true&vCenter=true&width=435&lines=Phone+Number+OSINT+Tool;Search+Google%2C+Brave%2C+DuckDuckGo;Pattern+Analysis+%26+Confidence+Scoring;Find+Names%2C+Locations%2C+Usernames)](https://github.com/thumpersecure/Telespot)
 
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
@@ -65,7 +65,7 @@ pip install -r requirements.txt
 
 | Feature | Description |
 |---------|-------------|
-| 🔍 **4 Search APIs** | Google, Bing, DuckDuckGo, and Dehashed (optional) |
+| 🔍 **4 Search APIs** | Google, Brave, DuckDuckGo, and Dehashed (optional) |
 | 📱 **10 Phone Formats** | Dashes, digits, parentheses, international, quoted variants |
 | 🧠 **Pattern Analysis** | Extracts names, locations, usernames with confidence scoring |
 | 🛡️ **Anti-Detection** | User-agent rotation (11 profiles) + random 3-5s delays |
@@ -163,7 +163,7 @@ Run the interactive setup wizard:
 | API | Free Tier | Signup |
 |-----|-----------|--------|
 | 🔵 **Google Custom Search** | 100 searches/day | [Get Key](https://developers.google.com/custom-search/v1/introduction) |
-| 🟢 **Bing Search (Azure)** | 1,000 searches/month | [Get Key](https://azure.microsoft.com/en-us/services/cognitive-services/bing-web-search-api/) |
+| 🟢 **Brave Search** | ~2,000 searches/month | [Get Key](https://api.search.brave.com/) |
 | 🟠 **DuckDuckGo** | ♾️ Unlimited | No key needed! |
 | 🔴 **Dehashed** | Paid | [Sign Up](https://dehashed.com/) |
 
@@ -180,11 +180,11 @@ Your API keys are securely stored in `~/.telespot_config`:
 google_api_key=YOUR_GOOGLE_API_KEY
 google_cse_id=YOUR_CUSTOM_SEARCH_ENGINE_ID
 
-# 🟢 Bing Search API (Azure)
-bing_api_key=YOUR_BING_API_KEY
+# 🟢 Brave Search API
+brave_api_key=YOUR_BRAVE_API_KEY
 
 # 🔴 Dehashed API (optional)
-dehashed_api_key=your_email@example.com:your_api_key
+dehashed_api_key=YOUR_DEHASHED_V2_API_KEY
 ```
 
 > 🔒 **Security:** Config file permissions are set to `600` (owner read/write only).
@@ -200,7 +200,7 @@ dehashed_api_key=your_email@example.com:your_api_key
 
 [1/10] Searching: 888-555-1212
   → Google API... (8 results)
-  → Bing API... (10 results)
+  → Brave API... (10 results)
   → DuckDuckGo... (2 results)
   ✅ 20 total for this format
   ⏳ Rate limit: 4.2 seconds
@@ -242,7 +242,7 @@ dehashed_api_key=your_email@example.com:your_api_key
 <summary>⚠️ API quota exceeded</summary>
 
 - **Google:** 100/day, resets at midnight UTC
-- **Bing:** 1,000/month, resets monthly
+- **Brave:** ~2,000/month, resets monthly
 - **DuckDuckGo:** No limits (but limited result types)
 
 </details>

@@ -16,15 +16,27 @@ from .http_fingerprint import (
     get_api_headers,
     get_random_headers,
 )
+from .patterns import (
+    US_STATES,
+    extract_emails,
+    extract_locations,
+    extract_names,
+    extract_usernames,
+)
 
 __all__ = [
     "Colors",
     "CAPTCHA_INDICATORS",
     "REFERERS",
     "USER_AGENTS",
+    "US_STATES",
     "deduplicate_results_dict",
     "deduplicate_results_list",
     "detect_captcha",
+    "extract_emails",
+    "extract_locations",
+    "extract_names",
+    "extract_usernames",
     "get_api_headers",
     "get_random_headers",
     "read_simple_kv_config",
