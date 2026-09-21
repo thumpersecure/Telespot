@@ -424,7 +424,7 @@ async def _search_duckduckgo_html(client, query, debug=False):
             snippet_pattern = r"<td[^>]*class=['\"]result-snippet['\"][^>]*>(.*?)</td>"
             snippets = re.findall(snippet_pattern, body, re.DOTALL)
 
-            if not links:
+            if not links and 'no results' not in body.lower():
                 # 2xx but nothing parsed => markup likely changed. Warn once.
                 _warn_once('ddg-parse', f"DuckDuckGo HTML returned {response.status_code} but 0 results parsed (selectors may be stale)")
 

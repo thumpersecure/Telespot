@@ -700,10 +700,11 @@ def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False, rat
 
 
 # DuckDuckGo serves a "bots use DuckDuckGo too" picture challenge (HTTP 202)
-# to clients it does not trust. Once we have seen it twice in a row there is
-# no point burning ~10s of backoff on every remaining format, so the HTML
+# to clients it does not trust. It is intermittent (a retry often succeeds),
+# but once three formats in a row have been challenged on every attempt
+# there is no point burning backoff on the remaining ones, so the HTML
 # fallback is switched off for the rest of the run and the user is told why.
-_DDG_CHALLENGE_LIMIT = 2
+_DDG_CHALLENGE_LIMIT = 3
 _ddg_challenge_streak = 0
 _ddg_html_disabled = False
 
@@ -741,12 +742,16 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
         )
 
         if was_blocked:
-            if rate_limiter:
-                rate_limiter.record_block()
             if debug:
                 print(f"    [DEBUG] DuckDuckGo HTML search blocked")
             if response is not None and is_bot_challenge_page(response.text):
+                # A bot challenge is not rate limiting: waiting longer between
+                # formats does not make it go away, so it is not fed to the
+                # adaptive limiter (which would otherwise stretch every
+                # remaining delay to its maximum).
                 _note_ddg_challenge(debug)
+            elif rate_limiter:
+                rate_limiter.record_block()
             return results
 
         if response is not None and 200 <= response.status_code < 300:
@@ -754,8 +759,6 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
 
             if is_bot_challenge_page(body):
                 # HTTP 202 challenge page that slipped past detect_captcha.
-                if rate_limiter:
-                    rate_limiter.record_block()
                 _note_ddg_challenge(debug)
                 return results
 
@@ -771,11 +774,15 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
             snippets = re.findall(snippet_pattern, body, re.DOTALL)
 
             if not links:
-                # Silent breakage guard: 2xx but nothing parsed usually
-                # means DDG changed its markup again. Warn, don't swallow it.
-                print(f"    {color.warning(f'DuckDuckGo HTML: HTTP {response.status_code} but 0 results parsed (selectors may be stale)')}")
-                if debug:
-                    print(f"    [DEBUG] response body length={len(body)}")
+                if 'no results' in body.lower() or 'no more results' in body.lower():
+                    if debug:
+                        print(f"    [DEBUG] DuckDuckGo HTML: no results for this format")
+                else:
+                    # Silent breakage guard: 2xx but nothing parsed usually
+                    # means DDG changed its markup again. Warn, don't swallow it.
+                    print(f"    {color.warning(f'DuckDuckGo HTML: HTTP {response.status_code} but 0 results parsed (selectors may be stale)')}")
+                    if debug:
+                        print(f"    [DEBUG] response body length={len(body)}")
 
             for i, (href, title) in enumerate(links[:num_results]):
                 # Clean HTML tags from title and snippet

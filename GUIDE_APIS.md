@@ -84,8 +84,9 @@ DuckDuckGo's Instant Answer API is free and doesn't require an API key. It's aut
 Note: The Instant Answer API returns instant answers and related topics only. When it has
 nothing for a phone number, telespot falls back to DuckDuckGo's lite web search page.
 DuckDuckGo may answer that fallback with a bot challenge (HTTP 202) when the request comes
-from a cloud, VPN or shared IP address. Telespot reports this and, after two challenges in a
-row, skips the fallback for the remainder of the run. Google and Brave are not affected.
+from a cloud, VPN or shared IP address. The challenge is intermittent, so each format is retried
+once. Telespot reports it and, after three challenged formats in a row, skips the fallback for
+the remainder of the run. Google and Brave are not affected.
 
 ---
 

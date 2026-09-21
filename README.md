@@ -68,7 +68,7 @@ This release fixes the bugs that made searches come back empty or misleading:
 
 | Fix | What was wrong |
 |-----|----------------|
-| 🦆 **DuckDuckGo works again** | The Instant Answer API now replies with HTTP 202, which the tool rejected. DuckDuckGo's HTTP 202 bot-challenge page is now detected and reported instead of silently returning 0 results. After two challenges in a row the web fallback is skipped so a run does not waste minutes in backoff. |
+| 🦆 **DuckDuckGo works again** | The Instant Answer API now replies with HTTP 202, which the tool rejected. DuckDuckGo's HTTP 202 bot-challenge page is now detected and reported instead of silently returning 0 results. The challenge is intermittent, so each format is retried once; after three challenged formats in a row the web fallback is skipped so a run does not waste minutes in backoff. |
 | 🗜️ **Compressed replies decoded** | Requests advertised brotli compression without a decoder, so servers sent bodies the tool could not read. `br` is only advertised when the `brotli` package is installed (now in `requirements.txt`). |
 | 🚫 **No more false captcha hits** | Words like *blocked*, *forbidden* and *access denied* appear in ordinary spam-call listings and used to trigger the captcha detector, which backed off and discarded real results. Detection now keys on real challenge markers only. |
 | 🔑 **API errors are shown** | An invalid or unenabled Google key returned 403, which was treated as a captcha and retried for 15+ seconds per format. All API errors (Google, Brave, Dehashed) now print the provider's message once. |
@@ -260,8 +260,9 @@ dehashed_api_key=YOUR_DEHASHED_V2_API_KEY
 <summary>🦆 "DuckDuckGo answered with a bot challenge"</summary>
 
 DuckDuckGo serves a picture challenge (HTTP 202) to clients it does not trust, especially from
-cloud, VPN or shared IP addresses. Telespot detects it, reports it once, and after two challenges
-in a row skips DuckDuckGo's web search for the rest of the run.
+cloud, VPN or shared IP addresses. The challenge is intermittent, so Telespot retries each format
+once, reports the challenge once, and after three challenged formats in a row skips DuckDuckGo's
+web search for the rest of the run.
 
 - Wait a while or switch networks and try again
 - Configure a free Google or Brave key, which are not affected
