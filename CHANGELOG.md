@@ -1,5 +1,41 @@
 # Changelog
 
+## V6.0.0 — one tool, three speeds
+
+`telespot.py` (sequential, requests) and `telespotx.py` (parallel, httpx) are merged into a
+single async engine. `telespotx.py` remains as a shim that runs `telespot.py --mode fast`.
+`requests` is no longer used; `httpx` and `brotli` are the dependencies.
+
+### Parallel engine with per-engine rate gates
+- Every configured engine (Google, Brave, DuckDuckGo, Dehashed) is queried concurrently for each
+  format, and several formats are searched at once.
+- Each engine sits behind its own rate gate. Brave is paced at 1 query/second (its free-tier
+  limit) in every mode; Google and Dehashed are lightly spaced; DuckDuckGo's web search, the only
+  engine that challenges bursts, is the one throttled by mode. A gate widens automatically when
+  its engine rate-limits or challenges and relaxes on success, so one engine's trouble never slows
+  the others.
+
+### Speed modes
+- `--fast`: all 10 formats at once, DuckDuckGo web search 3-wide.
+- `--mode balanced` (default): 4 formats at once, DuckDuckGo 2-wide with 1-2.5s jitter.
+- `--safe`: one format at a time with the classic adaptive delay between formats.
+- `--workers N` overrides the number of concurrent formats; `default_mode=` in the config file
+  (set by `--setup`) picks the default.
+
+### Everything works in every mode
+- Fast mode used to be US-only with 6 formats; all 10 formats and `-c` country codes now work in
+  every mode.
+- Email extraction (previously telespotx-only) is part of the main analysis, summary chart and
+  JSON/TXT export.
+- Run metadata (mode, elapsed time, rate-limit events, DuckDuckGo challenges) is printed and
+  saved with the results.
+- Per-format progress lines show each engine's count and the elapsed time.
+
+### Carried forward from 5.2.0
+- DuckDuckGo HTTP 202 handling and challenge detection, brotli-aware `Accept-Encoding`, accurate
+  captcha detection, provider error messages, credential-preserving retries, real occurrence
+  counts, international formats.
+
 ## V5.2.0 — telespot 5.2.0 / telespotx 0.4.0
 
 A bug-fix release for everything that made searches come back empty or misleading.

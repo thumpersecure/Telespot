@@ -1,11 +1,9 @@
 # Telespot Requirements
 # Install with: pip install -r requirements.txt
 
-requests>=2.32.5
+# Async HTTP engine (all speed modes run on httpx)
+httpx>=0.28.1
 
 # Brotli decoder. Without it the tool no longer advertises "br" compression,
-# because servers would otherwise reply with bodies requests cannot decode.
+# because servers would otherwise reply with bodies httpx cannot decode.
 brotli>=1.1.0
-
-# Optional: For telespotx.py (fast parallel mode)
-httpx>=0.28.1

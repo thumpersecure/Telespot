@@ -54,7 +54,8 @@ Run the interactive wizard:
 
 ## 2. Brave Search API
 
-**Free tier:** ~2,000 queries/month
+**Free tier:** ~2,000 queries/month, 1 query/second (telespot paces Brave at this rate
+automatically, even in fast mode)
 
 > Note: This replaced the Bing Search API, which Microsoft retired
 > (api.bing.microsoft.com/v7.0/search) in August 2025.
@@ -156,7 +157,8 @@ dehashed_api_key=your_dehashed_v2_key
 
 # Settings
 default_country_code=+1
-delay_seconds=2
+delay_seconds=2          # base delay between formats in safe mode
+default_mode=balanced    # fast, balanced or safe
 ```
 
 **Security:** This file has 600 permissions (owner read/write only).
