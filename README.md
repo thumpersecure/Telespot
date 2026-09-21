@@ -28,6 +28,7 @@
 [Usage](#-usage) •
 [API Setup](#-api-setup) •
 [Case Study](CASE_STUDY.md) •
+[Changelog](CHANGELOG.md) •
 [Support](#-support)
 
 </div>
