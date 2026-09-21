@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 telespotx - Fast parallel phone number OSINT tool
-v0.3.0
+v0.4.0
 
 Uses httpx + asyncio for parallel API requests.
 Includes captcha detection, retry logic, and DuckDuckGo HTML fallback.
@@ -26,7 +26,13 @@ except ImportError:
 
 from telespot_common.colors import Colors
 from telespot_common.config import read_simple_kv_config, resolve_config_path
-from telespot_common.http_fingerprint import detect_captcha, get_api_headers, get_random_headers
+from telespot_common.http_fingerprint import (
+    detect_captcha,
+    get_api_headers,
+    get_random_headers,
+    is_bot_challenge_page,
+    merge_headers,
+)
 from telespot_common.patterns import (
     extract_emails,
     extract_locations,
@@ -35,7 +41,7 @@ from telespot_common.patterns import (
 )
 
 # Version
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 def print_banner(no_color=False):
@@ -141,15 +147,18 @@ async def async_request_with_retry(client, method, url, max_retries=2, backoff_b
 
     Returns (response, was_blocked) tuple.
     """
+    # Read the API-mode flag once. It used to be popped inside the loop, so
+    # retries fell back to browser headers, and the caller's headers were
+    # replaced wholesale on retry, which dropped the Brave/Dehashed auth
+    # headers and turned every retry into a guaranteed 401.
+    api_mode = bool(kwargs.pop('_api_mode', False))
+    caller_headers = dict(kwargs.get('headers') or {})
+
     for attempt in range(max_retries + 1):
         try:
-            # Fresh headers on each retry
-            if 'headers' not in kwargs or attempt > 0:
-                if kwargs.pop('_api_mode', False) or kwargs.get('_api_mode'):
-                    kwargs['headers'] = get_api_headers()
-                else:
-                    kwargs['headers'] = get_random_headers()
-            kwargs.pop('_api_mode', None)
+            # Fresh fingerprint on each attempt, merged under caller headers.
+            fresh = get_api_headers() if api_mode else get_random_headers()
+            kwargs['headers'] = merge_headers(fresh, caller_headers)
 
             if 'timeout' not in kwargs:
                 kwargs['timeout'] = 12.0
@@ -159,7 +168,7 @@ async def async_request_with_retry(client, method, url, max_retries=2, backoff_b
             else:
                 response = await client.post(url, **kwargs)
 
-            if detect_captcha(response):
+            if detect_captcha(response, api_mode=api_mode):
                 if debug:
                     print(f"      [DEBUG] Captcha/block detected (attempt {attempt + 1}), status={response.status_code}")
                 if attempt < max_retries:
@@ -236,10 +245,38 @@ async def search_google(client, query, config, debug=False):
             if debug:
                 print(f"    [DEBUG] Google returned {len(results)} results")
             return results
+        _warn_once('google', f"Google API error {response.status_code}: {_api_error_message(response)}")
     except Exception as e:
         if debug:
             print(f"    [DEBUG] Google error: {e}")
     return []
+
+
+_warned = set()
+
+
+def _warn_once(key, message):
+    """Print a warning a single time per run (formats run in parallel)."""
+    if key not in _warned:
+        _warned.add(key)
+        print(f"  {Colors.YELLOW}Warning: {message}{Colors.RESET}")
+
+
+def _api_error_message(response, limit=120):
+    """Best-effort human-readable error from a JSON API error response."""
+    try:
+        data = response.json()
+        err = data.get('error', data)
+        if isinstance(err, dict):
+            msg = err.get('message') or err.get('detail') or err.get('code')
+            if msg:
+                return str(msg)[:limit]
+        if isinstance(err, str):
+            return err[:limit]
+    except Exception:
+        pass
+    text = (getattr(response, 'text', '') or '').strip()
+    return text[:limit] if text else 'no error details'
 
 async def search_brave(client, query, config, debug=False):
     """Search using the Brave Search API with retry.
@@ -261,7 +298,7 @@ async def search_brave(client, query, config, debug=False):
 
     try:
         response, was_blocked = await async_request_with_retry(
-            client, 'get', url, params=params, headers=headers, debug=debug
+            client, 'get', url, params=params, headers=headers, _api_mode=True, debug=debug
         )
 
         if was_blocked:
@@ -282,6 +319,10 @@ async def search_brave(client, query, config, debug=False):
             if debug:
                 print(f"    [DEBUG] Brave returned {len(results)} results")
             return results
+        if response.status_code in (401, 403):
+            _warn_once('brave', 'Brave API key invalid or subscription inactive')
+        else:
+            _warn_once('brave', f"Brave API error {response.status_code}: {_api_error_message(response)}")
     except Exception as e:
         if debug:
             print(f"    [DEBUG] Brave error: {e}")
@@ -305,7 +346,9 @@ async def search_duckduckgo(client, query, debug=False):
             client, 'get', url, params=params, _api_mode=True, debug=debug
         )
 
-        if not was_blocked and response and response.status_code == 200:
+        # The Instant Answer API now returns HTTP 202 (not 200) with a full
+        # JSON body for most queries; accept any 2xx.
+        if not was_blocked and response is not None and 200 <= response.status_code < 300:
             data = response.json()
 
             if data.get('AbstractText'):
@@ -358,10 +401,19 @@ async def _search_duckduckgo_html(client, query, debug=False):
         if was_blocked:
             if debug:
                 print(f"    [DEBUG] DuckDuckGo HTML blocked")
+            if response is not None and is_bot_challenge_page(response.text):
+                _warn_once('ddg-challenge', 'DuckDuckGo answered with a bot challenge instead of results. '
+                           'Try again later or from another network; Google/Brave keys give reliable results.')
             return results
 
-        if response and response.status_code == 200:
+        if response is not None and 200 <= response.status_code < 300:
             body = response.text
+
+            if is_bot_challenge_page(body):
+                # HTTP 202 "bots use DuckDuckGo too" page.
+                _warn_once('ddg-challenge', 'DuckDuckGo answered with a bot challenge instead of results. '
+                           'Try again later or from another network; Google/Brave keys give reliable results.')
+                return results
 
             # lite markup (single-quoted class attrs):
             #   <a rel="nofollow" href="...uddg=..." class='result-link'>title</a>
@@ -373,8 +425,8 @@ async def _search_duckduckgo_html(client, query, debug=False):
             snippets = re.findall(snippet_pattern, body, re.DOTALL)
 
             if not links:
-                # 200 OK but nothing parsed => markup likely changed. Warn loudly.
-                print("    Warning: DuckDuckGo HTML returned 200 but 0 results parsed (selectors may be stale)")
+                # 2xx but nothing parsed => markup likely changed. Warn once.
+                _warn_once('ddg-parse', f"DuckDuckGo HTML returned {response.status_code} but 0 results parsed (selectors may be stale)")
 
             for i, (href, title) in enumerate(links[:10]):
                 clean_title = re.sub(r'<[^>]+>', '', title).strip()
@@ -435,7 +487,7 @@ async def search_dehashed(client, query, config, debug=False):
 
     try:
         response, was_blocked = await async_request_with_retry(
-            client, 'post', url, json=payload, headers=headers, debug=debug
+            client, 'post', url, json=payload, headers=headers, _api_mode=True, debug=debug
         )
 
         if was_blocked:
@@ -459,6 +511,10 @@ async def search_dehashed(client, query, config, debug=False):
             if debug:
                 print(f"    [DEBUG] Dehashed returned {len(results)} results")
             return results
+        if response.status_code in (401, 403):
+            _warn_once('dehashed', 'Dehashed API key invalid or out of credits')
+        else:
+            _warn_once('dehashed', f"Dehashed API error {response.status_code}: {_api_error_message(response)}")
     except Exception as e:
         if debug:
             print(f"    [DEBUG] Dehashed error: {e}")

@@ -12,9 +12,12 @@ from .http_fingerprint import (
     CAPTCHA_INDICATORS,
     REFERERS,
     USER_AGENTS,
+    accept_encoding,
     detect_captcha,
     get_api_headers,
     get_random_headers,
+    is_bot_challenge_page,
+    merge_headers,
 )
 from .patterns import (
     US_STATES,
@@ -30,6 +33,7 @@ __all__ = [
     "REFERERS",
     "USER_AGENTS",
     "US_STATES",
+    "accept_encoding",
     "deduplicate_results_dict",
     "deduplicate_results_list",
     "detect_captcha",
@@ -39,6 +43,8 @@ __all__ = [
     "extract_usernames",
     "get_api_headers",
     "get_random_headers",
+    "is_bot_challenge_page",
+    "merge_headers",
     "read_simple_kv_config",
     "resolve_config_path",
 ]

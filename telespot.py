@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 telespot - Phone Number OSINT Tool
-Version 5.0.0
+Version 5.2.0
 
 API-based phone number search across Google, Brave, and DuckDuckGo
 with pattern recognition for names, locations, and usernames.
@@ -22,7 +22,13 @@ from urllib.parse import quote_plus
 
 from telespot_common.colors import Colors
 from telespot_common.config import resolve_config_path
-from telespot_common.http_fingerprint import detect_captcha, get_api_headers, get_random_headers
+from telespot_common.http_fingerprint import (
+    detect_captcha,
+    get_api_headers,
+    get_random_headers,
+    is_bot_challenge_page,
+    merge_headers,
+)
 from telespot_common.patterns import (
     US_STATES,
     extract_locations,
@@ -30,7 +36,7 @@ from telespot_common.patterns import (
     extract_usernames,
 )
 
-VERSION = "5.0.0"
+VERSION = "5.2.0"
 REPO_URL = "https://github.com/thumpersecure/Telespot"
 CONFIG_FILE = resolve_config_path(local_dir=os.path.dirname(os.path.abspath(__file__)))
 
@@ -237,22 +243,20 @@ def request_with_retry(method, url, max_retries=3, backoff_base=2.0, debug=False
     session = get_session()
     last_exception = None
 
+    # Read the API-mode flag once, up front. It used to be popped from kwargs
+    # inside the loop, so every retry silently switched to browser-style
+    # headers and to browser-style captcha detection.
+    api_mode = bool(kwargs.pop('_api_mode', False))
+    caller_headers = dict(kwargs.get('headers') or {})
+
     for attempt in range(max_retries + 1):
         try:
-            # Use fresh fingerprint headers on each retry to vary fingerprint,
-            # but MERGE them under any caller-supplied headers so auth headers
-            # (Brave subscription key, Dehashed API key, etc.) survive retries.
-            if 'headers' not in kwargs or attempt > 0:
-                if kwargs.get('_api_mode'):
-                    fresh = get_api_headers()
-                else:
-                    fresh = get_random_headers()
-                caller_headers = kwargs.get('headers') or {}
-                # Caller headers win over fresh fingerprint headers.
-                merged = dict(fresh)
-                merged.update(caller_headers)
-                kwargs['headers'] = merged
-            kwargs.pop('_api_mode', None)
+            # Use fresh fingerprint headers on each attempt to vary the
+            # fingerprint, but MERGE them under the caller-supplied headers so
+            # auth headers (Brave subscription key, Dehashed API key, ...)
+            # survive retries.
+            fresh = get_api_headers() if api_mode else get_random_headers()
+            kwargs['headers'] = merge_headers(fresh, caller_headers)
 
             if 'timeout' not in kwargs:
                 kwargs['timeout'] = 15
@@ -260,7 +264,7 @@ def request_with_retry(method, url, max_retries=3, backoff_base=2.0, debug=False
             response = getattr(session, method)(url, **kwargs)
 
             # Check for captcha/blocking
-            if detect_captcha(response):
+            if detect_captcha(response, api_mode=api_mode):
                 if debug:
                     print(f"      [DEBUG] Captcha/block detected (attempt {attempt + 1}/{max_retries + 1}), status={response.status_code}")
 
@@ -409,6 +413,10 @@ def generate_phone_formats(phone_number, country_code='+1'):
         line = digits[6:10]
     else:
         cc = country_code.lstrip('+')
+        # Strip a leading country code that the user typed into the number
+        # itself (e.g. "+442071234567" with -c +44) so it is not doubled.
+        if digits.startswith(cc) and len(digits) - len(cc) >= 7:
+            digits = digits[len(cc):]
         if len(digits) < 7:
             return []
         if len(digits) >= 10:
@@ -420,12 +428,14 @@ def generate_phone_formats(phone_number, country_code='+1'):
             prefix = digits[3:6] if len(digits) >= 6 else ''
             line = digits[6:] if len(digits) > 6 else ''
 
+    intl = f'+{country_code.lstrip("+")}'
+
     # 4 Basic formats
     basic = [
         f'{area}-{prefix}-{line}',                    # 215-555-1234
         f'{area}{prefix}{line}',                      # 2155551234
         f'({area}) {prefix}-{line}',                  # (215) 555-1234
-        f'+1{area}-{prefix}-{line}',                  # +1215-555-1234
+        f'{intl}{area}-{prefix}-{line}',              # +1215-555-1234 / +44207-123-4567
     ]
 
     # 4 Quoted formats (exact match)
@@ -433,7 +443,7 @@ def generate_phone_formats(phone_number, country_code='+1'):
         f'"{area}-{prefix}-{line}"',                  # "215-555-1234"
         f'"{area}{prefix}{line}"',                    # "2155551234"
         f'"({area}) {prefix}-{line}"',                # "(215) 555-1234"
-        f'"+1{area}-{prefix}-{line}"',                # "+1215-555-1234"
+        f'"{intl}{area}-{prefix}-{line}"',            # "+1215-555-1234"
     ]
 
     # 2 Special formats
@@ -511,14 +521,33 @@ def search_google_api(query, api_key, cse_id, num_results=10, verbose=False, deb
             print(f"    {color.warning('Google API quota exceeded')}")
             if rate_limiter:
                 rate_limiter.record_block()
-        elif debug:
-            print(f"    [DEBUG] Google error: {response.text[:100]}")
+        else:
+            # 400 = malformed key/cx, 403 = key invalid, API not enabled or
+            # daily quota exhausted. Always say so instead of hiding it.
+            print(f"    {color.warning(f'Google API error {response.status_code}: {_api_error_message(response)}')}")
 
     except Exception as e:
         if debug:
             print(f"    [DEBUG] Google exception: {e}")
 
     return results
+
+
+def _api_error_message(response, limit=120):
+    """Best-effort human-readable error from a JSON API error response."""
+    try:
+        data = response.json()
+        err = data.get('error', data)
+        if isinstance(err, dict):
+            msg = err.get('message') or err.get('detail') or err.get('code')
+            if msg:
+                return str(msg)[:limit]
+        if isinstance(err, str):
+            return err[:limit]
+    except Exception:
+        pass
+    text = (getattr(response, 'text', '') or '').strip()
+    return text[:limit] if text else 'no error details'
 
 
 def search_brave_api(query, api_key, num_results=10, verbose=False, debug=False, rate_limiter=None):
@@ -546,7 +575,7 @@ def search_brave_api(query, api_key, num_results=10, verbose=False, debug=False,
         }
 
         response, was_blocked = request_with_retry(
-            'get', url, headers=headers, params=params, debug=debug
+            'get', url, headers=headers, params=params, _api_mode=True, debug=debug
         )
 
         if was_blocked:
@@ -571,14 +600,14 @@ def search_brave_api(query, api_key, num_results=10, verbose=False, debug=False,
                     print(f"      Found: {item.get('title', '')[:60]}...")
             if rate_limiter:
                 rate_limiter.record_success()
-        elif response.status_code == 401:
-            print(f"    {color.warning('Brave API key invalid')}")
+        elif response.status_code in (401, 403):
+            print(f"    {color.warning('Brave API key invalid or subscription inactive')}")
         elif response.status_code == 429:
             print(f"    {color.warning('Brave API quota exceeded')}")
             if rate_limiter:
                 rate_limiter.record_block()
-        elif debug:
-            print(f"    [DEBUG] Brave error: {response.text[:100]}")
+        else:
+            print(f"    {color.warning(f'Brave API error {response.status_code}: {_api_error_message(response)}')}")
 
     except Exception as e:
         if debug:
@@ -614,7 +643,10 @@ def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False, rat
         if was_blocked:
             if debug:
                 print(f"    [DEBUG] DuckDuckGo API blocked, trying HTML fallback...")
-        elif response and response.status_code == 200:
+        elif response is not None and 200 <= response.status_code < 300:
+            # The Instant Answer API now answers with HTTP 202 (not 200) for
+            # most queries while still returning a full JSON body. Accept any
+            # 2xx and let the JSON parse decide.
             if debug:
                 print(f"    [DEBUG] DuckDuckGo API status: {response.status_code}")
 
@@ -657,7 +689,7 @@ def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False, rat
             print(f"    [DEBUG] DuckDuckGo API exception: {e}")
 
     # --- Phase 2: HTML fallback when API returns few/no results ---
-    if len(results) < 3:
+    if len(results) < 3 and not _ddg_html_disabled:
         html_results = _search_duckduckgo_html(query, num_results, verbose, debug, rate_limiter)
         results.extend(html_results)
 
@@ -667,6 +699,26 @@ def search_duckduckgo_api(query, num_results=10, verbose=False, debug=False, rat
     return results
 
 
+# DuckDuckGo serves a "bots use DuckDuckGo too" picture challenge (HTTP 202)
+# to clients it does not trust. Once we have seen it twice in a row there is
+# no point burning ~10s of backoff on every remaining format, so the HTML
+# fallback is switched off for the rest of the run and the user is told why.
+_DDG_CHALLENGE_LIMIT = 2
+_ddg_challenge_streak = 0
+_ddg_html_disabled = False
+
+
+def _note_ddg_challenge(debug=False):
+    global _ddg_challenge_streak, _ddg_html_disabled
+    _ddg_challenge_streak += 1
+    if _ddg_challenge_streak == 1:
+        print(f"\n    {color.warning('DuckDuckGo answered with a bot challenge instead of results')}")
+    if _ddg_challenge_streak >= _DDG_CHALLENGE_LIMIT and not _ddg_html_disabled:
+        _ddg_html_disabled = True
+        print(f"    {color.warning('DuckDuckGo is challenging this client; skipping its web search for the remaining formats.')}")
+        print(f"    {color.warning('Try again later or from another network. Google/Brave keys give reliable results.')}")
+
+
 def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, rate_limiter=None):
     """Scrape DuckDuckGo HTML lite search for actual web results.
 
@@ -674,6 +726,7 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
     which is common for phone number queries. The HTML lite version is
     lightweight and less likely to trigger captchas.
     """
+    global _ddg_challenge_streak
     results = []
 
     try:
@@ -684,7 +737,7 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
         params = {'q': query}
 
         response, was_blocked = request_with_retry(
-            'get', url, params=params, max_retries=2, debug=debug
+            'get', url, params=params, max_retries=1, debug=debug
         )
 
         if was_blocked:
@@ -692,10 +745,21 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
                 rate_limiter.record_block()
             if debug:
                 print(f"    [DEBUG] DuckDuckGo HTML search blocked")
+            if response is not None and is_bot_challenge_page(response.text):
+                _note_ddg_challenge(debug)
             return results
 
-        if response and response.status_code == 200:
+        if response is not None and 200 <= response.status_code < 300:
             body = response.text
+
+            if is_bot_challenge_page(body):
+                # HTTP 202 challenge page that slipped past detect_captcha.
+                if rate_limiter:
+                    rate_limiter.record_block()
+                _note_ddg_challenge(debug)
+                return results
+
+            _ddg_challenge_streak = 0
 
             # lite endpoint markup (single-quoted class attributes):
             #   <a rel="nofollow" href="...uddg=..." class='result-link'>title</a>
@@ -707,9 +771,9 @@ def _search_duckduckgo_html(query, num_results=10, verbose=False, debug=False, r
             snippets = re.findall(snippet_pattern, body, re.DOTALL)
 
             if not links:
-                # Silent breakage guard: 200 OK but nothing parsed usually
+                # Silent breakage guard: 2xx but nothing parsed usually
                 # means DDG changed its markup again. Warn, don't swallow it.
-                print(f"    {color.warning('DuckDuckGo HTML: 200 OK but 0 results parsed (selectors may be stale)')}")
+                print(f"    {color.warning(f'DuckDuckGo HTML: HTTP {response.status_code} but 0 results parsed (selectors may be stale)')}")
                 if debug:
                     print(f"    [DEBUG] response body length={len(body)}")
 
@@ -771,7 +835,7 @@ def search_dehashed_api(query, api_key, verbose=False, debug=False, rate_limiter
         payload = {'query': f'phone:"{query}"'}
 
         response, was_blocked = request_with_retry(
-            'post', url, json=payload, headers=headers, debug=debug
+            'post', url, json=payload, headers=headers, _api_mode=True, debug=debug
         )
 
         if was_blocked:
@@ -809,10 +873,10 @@ def search_dehashed_api(query, api_key, verbose=False, debug=False, rate_limiter
                     print(f"      Found: {name[:60]}...")
             if rate_limiter:
                 rate_limiter.record_success()
-        elif response.status_code == 401:
-            print(f"    {color.warning('Dehashed API key invalid')}")
-        elif debug:
-            print(f"    [DEBUG] Dehashed error: {response.text[:100]}")
+        elif response.status_code in (401, 403):
+            print(f"    {color.warning('Dehashed API key invalid or out of credits')}")
+        else:
+            print(f"    {color.warning(f'Dehashed API error {response.status_code}: {_api_error_message(response)}')}")
 
     except Exception as e:
         if debug:
@@ -1163,7 +1227,11 @@ def update_from_repo():
 
 def run_search(phone_number, args):
     """Main search orchestration with adaptive rate limiting and captcha resilience"""
-    global color
+    global color, _ddg_challenge_streak, _ddg_html_disabled
+
+    # Fresh DuckDuckGo challenge bookkeeping for every run
+    _ddg_challenge_streak = 0
+    _ddg_html_disabled = False
 
     # Set color mode
     if args.no_color:

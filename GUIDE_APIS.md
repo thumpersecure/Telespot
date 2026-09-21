@@ -81,7 +81,11 @@ Run the interactive wizard:
 
 DuckDuckGo's Instant Answer API is free and doesn't require an API key. It's automatically included in every search.
 
-Note: Results are limited to instant answers and related topics, not full web search results.
+Note: The Instant Answer API returns instant answers and related topics only. When it has
+nothing for a phone number, telespot falls back to DuckDuckGo's lite web search page.
+DuckDuckGo may answer that fallback with a bot challenge (HTTP 202) when the request comes
+from a cloud, VPN or shared IP address. Telespot reports this and, after two challenges in a
+row, skips the fallback for the remainder of the run. Google and Brave are not affected.
 
 ---
 
@@ -169,9 +173,16 @@ delay_seconds=2
 - Verify the subscription token in the Brave API dashboard
 - Check that your plan is still active
 
-### "No results from DuckDuckGo"
-- DuckDuckGo returns instant answers only
-- Works better for well-known topics
+### "Google API error 403: ..."
+- The message after the status code comes straight from Google
+- "API key not valid": re-check the key in the Cloud Console
+- "Custom Search API has not been used in project": enable the API (Step 1 above)
+- Daily quota messages: wait for the midnight UTC reset or use Brave
+
+### "No results from DuckDuckGo" / "DuckDuckGo answered with a bot challenge"
+- DuckDuckGo's Instant Answer API returns instant answers only
+- Its web search fallback may serve a bot challenge to scripted clients
+- Wait, or try from another network
 - Use Google/Brave for comprehensive results
 
 ### "Dehashed API error"

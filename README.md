@@ -11,7 +11,7 @@
  | __/ _ \ |/ _ \/ __| '_ \ / _ \| __|*
  | ||  __/ |  __/\__ \ |_) | (_) | |_
   \__\___|_|\___||___/ .__/ \___/ \__|
-*                    |_|    *   v5.0.0
+*                    |_|    *   v5.2.0
 ```
 
 [![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=00D9FF&center=true&vCenter=true&width=435&lines=Phone+Number+OSINT+Tool;Search+Google%2C+Brave%2C+DuckDuckGo;Pattern+Analysis+%26+Confidence+Scoring;Find+Names%2C+Locations%2C+Usernames)](https://github.com/thumpersecure/Telespot)
@@ -47,7 +47,7 @@ cd Telespot
 python3 -m venv telvenv
 source telvenv/bin/activate
 
-# 3️⃣ Install dependencies
+# 3️⃣ Install dependencies (requests, brotli, httpx)
 pip install -r requirements.txt
 
 # 4️⃣ Configure your API keys
@@ -58,6 +58,23 @@ pip install -r requirements.txt
 ```
 
 > 💡 **Tip:** No API keys? No problem! DuckDuckGo works without any setup.
+> DuckDuckGo does, however, sometimes answer scripted clients with a bot challenge. A free Google or Brave key gives reliable results.
+
+---
+
+## 🆕 What's New in 5.2.0
+
+This release fixes the bugs that made searches come back empty or misleading:
+
+| Fix | What was wrong |
+|-----|----------------|
+| 🦆 **DuckDuckGo works again** | The Instant Answer API now replies with HTTP 202, which the tool rejected. DuckDuckGo's HTTP 202 bot-challenge page is now detected and reported instead of silently returning 0 results. After two challenges in a row the web fallback is skipped so a run does not waste minutes in backoff. |
+| 🗜️ **Compressed replies decoded** | Requests advertised brotli compression without a decoder, so servers sent bodies the tool could not read. `br` is only advertised when the `brotli` package is installed (now in `requirements.txt`). |
+| 🚫 **No more false captcha hits** | Words like *blocked*, *forbidden* and *access denied* appear in ordinary spam-call listings and used to trigger the captcha detector, which backed off and discarded real results. Detection now keys on real challenge markers only. |
+| 🔑 **API errors are shown** | An invalid or unenabled Google key returned 403, which was treated as a captcha and retried for 15+ seconds per format. All API errors (Google, Brave, Dehashed) now print the provider's message once. |
+| 🔁 **Retries keep credentials** | Retries used to regenerate headers and drop the Brave subscription token and Dehashed key, turning every retry into a 401. |
+| 📊 **Counts are real** | Locations and usernames were de-duplicated before counting, so every count was 1 and ⭐ indicators and confidence scores never worked. |
+| 🌍 **International formats** | Non-US numbers were searched as `+1…`. The `-c` country code is now used, and a country code typed into the number is not doubled. |
 
 ---
 
@@ -68,7 +85,7 @@ pip install -r requirements.txt
 | 🔍 **4 Search APIs** | Google, Brave, DuckDuckGo, and Dehashed (optional) |
 | 📱 **10 Phone Formats** | Dashes, digits, parentheses, international, quoted variants |
 | 🧠 **Pattern Analysis** | Extracts names, locations, usernames with confidence scoring |
-| 🛡️ **Anti-Detection** | User-agent rotation (11 profiles) + random 3-5s delays |
+| 🛡️ **Anti-Detection** | User-agent rotation (13 profiles), adaptive delays, accurate bot-challenge detection |
 | 🎨 **Output Options** | Verbose, colorful rainbow mode, JSON/TXT export, summary charts |
 | 🌍 **International** | Support for country codes worldwide |
 | ⚡ **Fast Mode** | TelespotX for parallel requests (US only) |
@@ -77,10 +94,10 @@ pip install -r requirements.txt
 
 ## ⚡ TelespotX (Fast Mode)
 
-Need **maximum speed**? Use `telespotx.py` for parallel requests with no rate limiting:
+Need **maximum speed**? Use `telespotx.py` (v0.4.0) for parallel requests with no rate limiting:
 
 ```bash
-pip install httpx
+pip install httpx brotli
 ./telespotx.py 8885551212        # ⚡ ~5 seconds vs ~60 seconds
 ```
 
@@ -232,9 +249,22 @@ dehashed_api_key=YOUR_DEHASHED_V2_API_KEY
 <summary>❌ No results found</summary>
 
 1. Check API status: `./telespot.py --api-status`
-2. Verify API keys are valid
+2. Verify API keys are valid (a bad Google key now prints Google's own error message)
 3. Try with `--debug` to see API responses
 4. DuckDuckGo Instant Answers only works for well-known topics
+5. Make sure `brotli` is installed (`pip install -r requirements.txt`)
+
+</details>
+
+<details>
+<summary>🦆 "DuckDuckGo answered with a bot challenge"</summary>
+
+DuckDuckGo serves a picture challenge (HTTP 202) to clients it does not trust, especially from
+cloud, VPN or shared IP addresses. Telespot detects it, reports it once, and after two challenges
+in a row skips DuckDuckGo's web search for the rest of the run.
+
+- Wait a while or switch networks and try again
+- Configure a free Google or Brave key, which are not affected
 
 </details>
 
