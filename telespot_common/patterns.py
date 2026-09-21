@@ -79,17 +79,21 @@ def extract_locations(text: str) -> List[str]:
     # Zip codes
     locations.extend(_ZIP_PATTERN.findall(text))
 
-    return list(set(locations))
+    # Every occurrence is returned (no de-duplication): callers count them
+    # with Counter to rank locations and compute confidence. An earlier
+    # version returned list(set(...)), which capped every count at 1 and
+    # made the "mentioned N times" / consistency scoring meaningless.
+    return locations
 
 
 def extract_usernames(text: str) -> List[str]:
-    """Extract potential usernames from text and social URLs."""
+    """Extract potential usernames from text and social URLs (every occurrence)."""
     usernames: List[str] = []
     usernames.extend(_USERNAME_AT_PATTERN.findall(text))
     usernames.extend(_USERNAME_URL_PATTERN.findall(text))
-    return list(set(u for u in usernames if u.lower() not in _USERNAME_EXCLUDED))
+    return [u for u in usernames if u.lower() not in _USERNAME_EXCLUDED]
 
 
 def extract_emails(text: str) -> List[str]:
-    """Extract email addresses from text."""
-    return list(set(_EMAIL_PATTERN.findall(text)))
+    """Extract email addresses from text (every occurrence)."""
+    return _EMAIL_PATTERN.findall(text)
