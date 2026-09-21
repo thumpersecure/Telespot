@@ -282,13 +282,18 @@ class RateGate:
         self.penalty = 0.0
         self.blocks = 0
         self.waited = 0.0
+        self.closed = False   # engine given up on: let waiters through at once
         self._lock = asyncio.Lock()
         self._sem = asyncio.Semaphore(max(1, concurrency))
         self._next_at = 0.0
 
     async def __aenter__(self):
         await self._sem.acquire()
+        if self.closed:
+            return self
         async with self._lock:
+            if self.closed:
+                return self
             wait = self._next_at - time.monotonic()
             if wait > 0:
                 self.waited += wait
@@ -301,10 +306,18 @@ class RateGate:
         self._sem.release()
         return False
 
-    def punish(self):
-        """Engine rate-limited or challenged us: widen the spacing."""
-        self.blocks += 1
+    def widen(self):
+        """Widen the spacing without counting a rate-limit event."""
         self.penalty = min(self.max_penalty, max(1.5, self.penalty * 1.8))
+
+    def punish(self):
+        """Engine rate-limited us: count it and widen the spacing."""
+        self.blocks += 1
+        self.widen()
+
+    def close(self):
+        """Stop pacing: callers still enter, but check their own disabled flag."""
+        self.closed = True
 
     def reward(self):
         """Engine answered normally: relax the spacing gradually."""
@@ -557,11 +570,16 @@ class SearchRun:
         """Record a fully-challenged DuckDuckGo web search for one format."""
         self.ddg_challenges += 1
         self.ddg_challenge_streak += 1
-        self.gates['ddg_html'].punish()
+        # A challenge is not rate limiting (it is counted separately), but it
+        # does mean DuckDuckGo wants more space between requests.
+        self.gates['ddg_html'].widen()
         self.warn_once('ddg-challenge',
                        'DuckDuckGo answered with a bot challenge instead of results (retrying each format once)')
         if self.ddg_challenge_streak >= self.DDG_CHALLENGE_LIMIT and not self.ddg_html_disabled:
             self.ddg_html_disabled = True
+            # Formats already queued on the gate must not sit out its widened
+            # spacing just to find out the fallback is off.
+            self.gates['ddg_html'].close()
             self.warn_once('ddg-disabled',
                            'DuckDuckGo is challenging this client; skipping its web search for the remaining formats. '
                            'Try again later or from another network. Google/Brave keys give reliable results.')
@@ -1314,6 +1332,9 @@ async def run_search_async(phone_number, args):
     }
     if args.dehashed and not keys['dehashed_key']:
         print(color.warning("--dehashed given but no Dehashed key configured (run --setup)\n"))
+    if mode == 'fast' and not (keys['google_key'] and keys['google_cse']) and not keys['brave_key']:
+        print(color.warning("Fast mode with DuckDuckGo only: bursts are more likely to be challenged. "
+                            "Balanced mode or a Google/Brave key gives better results.\n"))
 
     keyword_suffix = f" {args.keyword}" if args.keyword else ""
     site_prefix = f"site:{args.site} " if args.site else ""
